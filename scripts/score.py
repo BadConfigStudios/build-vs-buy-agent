@@ -71,7 +71,7 @@ def _score_factor(option_name, factor, spec):
 
 def _score_option(option, environment, names, max_total):
     if not isinstance(option, dict):
-        raise ValueError("every option needs a name")
+        raise ValueError("every option must be an object with a name")
     name = option.get("name")
     if not isinstance(name, str) or not name.strip():
         raise ValueError(f"every option needs a non-empty string name, got {name!r}")
@@ -136,7 +136,7 @@ def evaluate(data):
     options = data.get("options")
     if not isinstance(options, list) or not options:
         raise ValueError("options must be a non-empty list")
-    names_seen = [o["name"] for o in options if isinstance(o, dict) and isinstance(o.get("name"), str)]
+    names_seen = [o["name"].strip() for o in options if isinstance(o, dict) and isinstance(o.get("name"), str)]
     duplicates = sorted({n for n in names_seen if names_seen.count(n) > 1})
     if duplicates:
         raise ValueError(f"option names must be unique, duplicated: {duplicates}")

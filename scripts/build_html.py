@@ -79,8 +79,9 @@ a { color:var(--accent); }
   };
   renderer.link = function (href, title, text) {
     if (!/^(https?:|mailto:|#)/i.test(href || "")) { return text; }
+    var inner = String(text).replace(/<a [^>]*>([\s\S]*?)<\/a>/g, "$1");
     return '<a href="' + esc(href) + '"' + (title ? ' title="' + title + '"' : "") +
-      ' rel="noopener noreferrer">' + text + "</a>";
+      ' rel="noopener noreferrer">' + inner + "</a>";
   };
   renderer.image = function (href, title, text) {
     if (!/^https?:/i.test(href || "")) { return text; }

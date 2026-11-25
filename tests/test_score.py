@@ -246,6 +246,14 @@ class MalformedShapes(unittest.TestCase):
         with self.assertRaises(ValueError):
             run([option("X", uniform(4)), option("X", uniform(3))])
 
+    def test_duplicate_names_after_strip(self):
+        with self.assertRaises(ValueError):
+            run([option("X", uniform(4)), option("X ", uniform(3))])
+
+    def test_non_object_option_message(self):
+        with self.assertRaisesRegex(ValueError, "must be an object"):
+            run([5])
+
     def test_environment_odd_types(self):
         for bad in (None, 5, [], ["production"], {}, {"a": 1}, True):
             with self.subTest(environment=bad):

@@ -1,3 +1,4 @@
+import html
 import json
 import pathlib
 import re
@@ -174,12 +175,10 @@ class Build(unittest.TestCase):
 
 
 class Rendering(unittest.TestCase):
-    def test_renderer_source_overrides_image_and_does_not_double_escape(self):
+    def test_csp_still_blocks_remote_images(self):
         tmp, run = make_run()
         with tmp:
             page = build_html.build(run).read_text(encoding="utf-8")
-            self.assertIn("renderer.image", page)
-            self.assertNotIn("esc(title)", page)
             self.assertIn("img-src data:", page)
 
     @unittest.skipUnless(NODE, "node not installed")
@@ -195,6 +194,14 @@ class Rendering(unittest.TestCase):
         self.assertNotIn("<img", out)
         self.assertIn('<a href="https://x.test/a.png"', out)
         self.assertIn(">Logo &amp; co</a>", out)
+
+    @unittest.skipUnless(NODE, "node not installed")
+    def test_image_inside_link_has_no_nested_anchor(self):
+        out = render_panels("[![img & co](https://x.test/i.png)](https://x.test/)\n")[0]
+        self.assertEqual(out.count("<a "), 1)
+        self.assertEqual(out.count("</a>"), 1)
+        self.assertIn('<a href="https://x.test/"', out)
+        self.assertIn("img &amp; co", out)
 
     @unittest.skipUnless(NODE, "node not installed")
     def test_non_http_image_is_alt_text_only(self):
@@ -271,12 +278,7 @@ class Frontmatter(unittest.TestCase):
                 tmp, run = make_run(final=f"---\ntopic: {raw}\n---\n\n# T\n")
                 with tmp:
                     page = build_html.build(run).read_text(encoding="utf-8")
-                    self.assertIn(f"<title>{html_escape(want)}</title>", page)
-
-
-def html_escape(s):
-    import html
-    return html.escape(s)
+                    self.assertIn(f"<title>{html.escape(want)}</title>", page)
 
 
 class Cli(unittest.TestCase):
