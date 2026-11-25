@@ -16,6 +16,12 @@ FACTOR_LABELS = {
     "maintenance": "Maintenance", "dependencies": "Dependencies", "lock_in": "Lock-in", "cost": "Cost",
     "time_to_value": "Time to value", "security": "Security",
 }
+RECOMMENDATION_PHRASES = (
+    "i recommend", "we recommend", "recommended", "our recommendation", "the winner", "best choice",
+    "best option", "you should choose", "you should use", "you should pick", "should adopt",
+    "go with", "we suggest", "i suggest", "the right choice", "clear choice",
+)
+MATRIX = ROOT / "skills" / "build-vs-buy" / "matrix.md"
 HEADER = "| Factor | Base | Modifiers | Final | Why (matrix condition met) | Evidence (source, retrieved) | Status |"
 
 
@@ -28,6 +34,14 @@ class CandidateTemplate(unittest.TestCase):
         rows = [m.group(1).strip() for m in re.finditer(r"^\| ([^|]+?) \|", self.text, re.M)]
         rows = [r for r in rows if r in FACTORS]
         self.assertEqual(rows, FACTORS)
+
+    def test_no_recommendation_language(self):
+        lowered = self.text.lower()
+        for phrase in RECOMMENDATION_PHRASES:
+            self.assertNotIn(phrase, lowered, phrase)
+
+    def test_prerelease_options_match_score_py(self):
+        self.assertIn("- Prerelease status: <" + " | ".join(score.PRERELEASE) + ">", self.text)
 
     def test_has_h1_and_required_sections(self):
         self.assertTrue(self.text.startswith("# "))
@@ -85,7 +99,21 @@ class FinalTemplate(unittest.TestCase):
             self.assertIn(heading, self.text)
 
     def test_no_recommendation_language(self):
-        self.assertIn("This analysis does not make a decision.", self.text)
+        self.assertIn("This analysis does not make a decision. It reports scores and evidence "
+                      "so the owner can decide.", self.text)
+        lowered = self.text.lower()
+        for phrase in RECOMMENDATION_PHRASES:
+            self.assertNotIn(phrase, lowered, phrase)
+
+    def test_factor_labels_cover_score_weights_in_order(self):
+        self.assertEqual(list(FACTOR_LABELS), list(score.WEIGHTS))
+
+    def test_matrix_version_matches_matrix_md(self):
+        declared = re.search(r"^Version (\d+(?:\.\d+)*)\b", MATRIX.read_text(encoding="utf-8"), re.M)
+        self.assertIsNotNone(declared, "matrix.md declares no 'Version X.Y' line")
+        front = re.search(r"^matrix_version: (\S+)$", self.text, re.M)
+        self.assertIsNotNone(front)
+        self.assertEqual(front.group(1), declared.group(1))
 
 
 class ResearcherAgent(unittest.TestCase):
@@ -99,7 +127,8 @@ class ResearcherAgent(unittest.TestCase):
         self.assertNotRegex(head, r"\b(Write|Edit|Bash)\b")
 
     def test_forbids_scoring(self):
-        self.assertIn("Do not score", self.text)
+        self.assertIn("Do not score, rank, recommend, or judge. The orchestrator scores.", self.text)
+        self.assertIn("Never scores", self.text.split("---", 2)[1])
 
 
 if __name__ == "__main__":
