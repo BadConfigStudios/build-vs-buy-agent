@@ -21,6 +21,7 @@ NAMES = {
     "Security": "security",
 }
 FORBIDDEN = ("Argo", "Kyverno", "Cloudflare", "BadConfig", "Bryan")
+WEIGHT_LINE = re.compile(r"^- (.+?): (\d+)$", re.M)
 EXAMPLES = sorted((ROOT / "docs" / "examples").glob("*.md"))
 # Examples may name Cloudflare as a real vendor candidate; project-specific names stay forbidden.
 EXAMPLES_ALLOWED = ("Cloudflare",)
@@ -33,11 +34,11 @@ class MatrixWeights(unittest.TestCase):
     def test_step3_weights_match_score_py(self):
         section = self.text.split("## Step 3", 1)[1].split("## Step 4", 1)[0]
         found = {NAMES[m.group(1)]: int(m.group(2))
-                 for m in re.finditer(r"^- (.+?): (\d+)$", section, re.M)}
+                 for m in WEIGHT_LINE.finditer(section)}
         self.assertEqual(found, score.WEIGHTS)
 
     def test_weight_regex_accepts_multi_digit(self):
-        m = re.match(r"^- (.+?): (\d+)$", "- Fit: 12")
+        m = WEIGHT_LINE.search("- Fit: 12")
         self.assertEqual(m.group(2), "12")
 
     def test_names_cover_score_weights(self):
