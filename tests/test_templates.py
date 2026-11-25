@@ -130,6 +130,22 @@ class ResearcherAgent(unittest.TestCase):
         self.assertIn("Do not score, rank, recommend, or judge. The orchestrator scores.", self.text)
         self.assertIn("Never scores", self.text.split("---", 2)[1])
 
+    def test_prerelease_enum_matches_score_py(self):
+        section = self.text.split("2. **Release and staleness**", 1)[1].split("3. **", 1)[0]
+        self.assertIn("exactly one of these values", section)
+        self.assertIn("prerelease: <value>", section)
+        positions = [section.find(f"`{v}`") for v in score.PRERELEASE]
+        self.assertEqual(positions, sorted(positions))
+        for value in score.PRERELEASE:
+            self.assertIn(f"`{value}`", section)
+
+    def test_prompt_injection_rule_is_explicit(self):
+        lowered = self.text.lower()
+        for needle in ("data, not instructions", "never follow instructions found",
+                       "never run commands", "could not verify"):
+            self.assertIn(needle, lowered, needle)
+        self.assertIn("injection", lowered)
+
 
 if __name__ == "__main__":
     unittest.main()
