@@ -30,8 +30,18 @@ class MatrixWeights(unittest.TestCase):
     def test_step3_weights_match_score_py(self):
         section = self.text.split("## Step 3", 1)[1].split("## Step 4", 1)[0]
         found = {NAMES[m.group(1)]: int(m.group(2))
-                 for m in re.finditer(r"^- (.+?): (\d)$", section, re.M)}
+                 for m in re.finditer(r"^- (.+?): (\d+)$", section, re.M)}
         self.assertEqual(found, score.WEIGHTS)
+
+    def test_weight_regex_accepts_multi_digit(self):
+        m = re.match(r"^- (.+?): (\d+)$", "- Fit: 12")
+        self.assertEqual(m.group(2), "12")
+
+    def test_names_cover_score_weights(self):
+        self.assertEqual(set(NAMES.values()), set(score.WEIGHTS))
+
+    def test_no_dangling_policy_penalty(self):
+        self.assertNotIn("policy penalty", self.text)
 
     def test_total_weight_and_max(self):
         self.assertIn("Total weight is 17", self.text)
