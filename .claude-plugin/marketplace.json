@@ -1,5 +1,6 @@
 {
   "name": "build-vs-buy-agent",
+  "description": "Build-vs-buy analysis for Claude Code: interview, parallel research, transparent scoring, markdown and HTML output.",
   "owner": { "name": "BadConfigStudios" },
   "plugins": [
     {
