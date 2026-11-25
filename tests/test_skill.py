@@ -1,6 +1,7 @@
 import json
 import pathlib
 import re
+import subprocess
 import sys
 import unittest
 
@@ -46,6 +47,15 @@ class SkillFile(unittest.TestCase):
             self.assertIn(name, self.text)
         self.assertEqual(len(score.QUICK_FACTORS), 5)
 
+    def test_quick_factor_names_equal_score_py(self):
+        labels = {"fit": "Fit", "maintenance": "Maintenance effort", "dependencies": "Dependency count",
+                  "time_to_value": "Time to value", "security": "Security"}
+        self.assertEqual(tuple(labels), score.QUICK_FACTORS)
+        line = next(l for l in self.text.splitlines() if l.startswith("**Arguments.**"))
+        listed = re.search(r"score only (.+?) \(`mode", line).group(1)
+        names = [n.strip() for n in re.split(r",| and ", listed) if n.strip()]
+        self.assertEqual(names, list(labels.values()))
+
     def test_referenced_paths_exist(self):
         base = SKILL.parent
         for rel in ("matrix.md", "templates/final.md", "templates/candidate.md",
@@ -73,12 +83,19 @@ class Readme(unittest.TestCase):
             self.assertIn(phrase, text, phrase)
 
     def test_no_private_details(self):
-        for path in ROOT.rglob("*.md"):
-            if ".git" in path.parts or "results" in path.parts:
+        tracked = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True,
+                                 check=True).stdout.decode().split("\0")
+        paths = [ROOT / p for p in tracked if p and not p.startswith("scripts/vendor/")]
+        checked = 0
+        for path in paths:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
                 continue
-            text = path.read_text(encoding="utf-8")
+            checked += 1
             self.assertNotRegex(text, r"/Users/\w+", str(path))
             self.assertNotRegex(text, r"[\w.]+@gmail\.com", str(path))
+        self.assertGreater(checked, 20)
 
 
 if __name__ == "__main__":
