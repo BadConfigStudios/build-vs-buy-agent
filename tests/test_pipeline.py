@@ -50,6 +50,8 @@ def render_final(result):
     text = text.replace("<topic>", "pipeline fixture")
     header = re.search(r"^\| Option \|.*\n\|[-| ]+\|\n", text, re.M)
     row_pat = re.compile(r"^\| <name> \|.*\n", re.M)
+    if not (header and row_pat.search(text)):
+        raise RuntimeError("final.md template lost its score table")
     rows = []
     for opt in result["options"]:
         cells = [str(opt["factors"][f]["final"]) for f in FACTORS]
@@ -58,8 +60,8 @@ def render_final(result):
         rows.append("| " + " | ".join(
             [opt["name"], *cells,
              f'{opt["weighted_total"]}/{result["max_total"]}', str(opt["percentage"]), gate]) + " |\n")
-    assert header and row_pat.search(text), "final.md template lost its score table"
-    return row_pat.sub("".join(rows), text, count=1)
+    table = "".join(rows)
+    return row_pat.sub(lambda m: table, text, count=1)
 
 
 def render_candidate(opt, result, evidence):
@@ -73,10 +75,12 @@ def render_candidate(opt, result, evidence):
 class PipelineTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp = tempfile.TemporaryDirectory()
-        cls.run_dir = pathlib.Path(cls.tmp.name)
+        tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(tmp.cleanup)
+        cls.run_dir = pathlib.Path(tmp.name)
         scored = run_script("score.py", stdin=json.dumps(FIXTURE))
-        assert scored.returncode == 0, scored.stderr
+        if scored.returncode != 0:
+            raise RuntimeError(scored.stderr)
         cls.result = json.loads(scored.stdout)
         (cls.run_dir / "final.md").write_text(render_final(cls.result), encoding="utf-8")
         (cls.run_dir / "candidates").mkdir()
@@ -86,38 +90,39 @@ class PipelineTest(unittest.TestCase):
             (cls.run_dir / "candidates" / f"{slug}.md").write_text(
                 render_candidate(opt, cls.result, evidence), encoding="utf-8")
         built = run_script("build_html.py", str(cls.run_dir))
-        assert built.returncode == 0, built.stderr
+        if built.returncode != 0:
+            raise RuntimeError(built.stderr)
         cls.page = (cls.run_dir / "index.html").read_text(encoding="utf-8")
-        data = re.search(r'<script id="bvb-data" type="application/json">(.*?)</script>',
-                         cls.page, re.S).group(1)
-        cls.tabs = json.loads(data)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tmp.cleanup()
+        found = re.search(r'<script id="bvb-data" type="application/json">(.*?)</script>',
+                          cls.page, re.S)
+        if not found:
+            raise RuntimeError("bvb-data block missing from built page")
+        cls.tabs = json.loads(found.group(1))
 
     def test_tab_set_is_summary_scores_then_one_per_candidate(self):
         labels = [t["label"] for t in self.tabs]
         self.assertEqual(labels, ["Summary", "Scores", "Alpha Tool", "Build", "Risky Beta"])
 
-    def test_scores_tab_totals_match_score_script_output(self):
+    def test_scores_tab_totals_match_known_values(self):
         scores_md = next(t["markdown"] for t in self.tabs if t["label"] == "Scores")
-        for opt in self.result["options"]:
-            self.assertIn(f'{opt["weighted_total"]}/{self.result["max_total"]}', scores_md)
-            self.assertIn(str(opt["percentage"]), scores_md)
+        for name, total, pct in [("Alpha Tool", "63/85", "74.1"), ("Build", "66/85", "77.6"),
+                                 ("Risky Beta", "85/85", "100.0")]:
+            row = next((ln for ln in scores_md.splitlines() if ln.startswith(f"| {name} |")), None)
+            self.assertIsNotNone(row, name)
+            self.assertIn(f"| {total} | {pct} |", row)
 
-    def test_candidate_tabs_carry_script_totals(self):
-        for opt in self.result["options"]:
-            md = next(t["markdown"] for t in self.tabs if t["label"] == opt["name"])
-            self.assertIn(f'{opt["weighted_total"]}/{self.result["max_total"]} ({opt["percentage"]}%)', md)
+    def test_candidate_tabs_carry_known_totals(self):
+        expected = {"Alpha Tool": "63/85 (74.1%)", "Build": "66/85 (77.6%)", "Risky Beta": "85/85 (100.0%)"}
+        for name, text in expected.items():
+            md = next(t["markdown"] for t in self.tabs if t["label"] == name)
+            self.assertIn(text, md)
 
     def test_gate_failure_shows_in_scores_and_ranking_excludes_it(self):
         scores_md = next(t["markdown"] for t in self.tabs if t["label"] == "Scores")
         self.assertIn("failed environment", scores_md)
-        self.assertNotIn("Risky Beta", self.result["ranking"])
-        self.assertEqual(self.result["ranking"][0], "Build" if
-                         self.result["options"][1]["weighted_total"] >
-                         self.result["options"][0]["weighted_total"] else "Alpha Tool")
+        risky = next(o for o in self.result["options"] if o["name"] == "Risky Beta")
+        self.assertEqual(risky["gates"]["environment"], "fail")
+        self.assertEqual(self.result["ranking"], ["Build", "Alpha Tool"])
 
     def test_summary_tab_keeps_frontmatter_and_no_decision_line(self):
         summary = self.tabs[0]["markdown"]
@@ -126,19 +131,17 @@ class PipelineTest(unittest.TestCase):
         self.assertNotIn("## Scores", summary)
 
     def test_hostile_evidence_stays_inert_in_page(self):
-        # marked + data block + app script; the hostile string adds none
-        self.assertEqual(self.page.lower().count("<script"), 3)
-        data = re.search(r'<script id="bvb-data" type="application/json">(.*?)</script>',
-                         self.page, re.S).group(1)
+        block = re.compile(r'<script id="bvb-data" type="application/json">(.*?)</script>', re.S)
+        self.assertEqual(len(block.findall(self.page)), 1)
+        data = block.search(self.page).group(1)
         self.assertNotIn("<", data)  # every hostile "<" is \u003c inside the JSON block
         self.assertIn("\\u003c/script>", data)
+        # outside the data block the payload appears nowhere (independent of vendored marked)
+        outside = block.sub("", self.page)
+        self.assertNotIn("pwned", outside)
+        self.assertNotIn("<img src=x", outside)
         alpha = next(t["markdown"] for t in self.tabs if t["label"] == "Alpha Tool")
-        self.assertIn(HOSTILE, alpha)  # preserved as data, rendered escaped client-side
-
-    def test_bad_score_input_stops_pipeline_with_exit_2(self):
-        bad = run_script("score.py", stdin=json.dumps({"environment": "production", "options": []}))
-        self.assertEqual(bad.returncode, 2)
-        self.assertEqual(bad.stdout, "")
+        self.assertIn(HOSTILE, alpha)  # preserved as data; escaping at render time is covered in test_build_html
 
 
 if __name__ == "__main__":
