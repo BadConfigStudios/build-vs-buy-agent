@@ -1,0 +1,11 @@
+{
+  "name": "build-vs-buy-agent",
+  "owner": { "name": "BadConfigStudios" },
+  "plugins": [
+    {
+      "name": "build-vs-buy",
+      "source": "./",
+      "description": "Research build-vs-buy candidates and score them with a transparent matrix."
+    }
+  ]
+}
