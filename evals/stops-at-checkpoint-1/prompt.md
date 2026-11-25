@@ -4,7 +4,7 @@ tags: [checkpoint]
 runs: 3
 max_turns: 8
 timeout_seconds: 300
-allowed_tools: [Skill, Read, Glob, Grep]
+allowed_tools: [Skill, Read, Glob, Grep, Agent, Write, WebSearch, WebFetch]
 ---
 
 /build-vs-buy secret rotation for a small Kubernetes cluster

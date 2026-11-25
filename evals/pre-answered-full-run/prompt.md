@@ -21,4 +21,4 @@ This is non-interactive, so every answer is given here. Do not ask questions; tr
 - Checkpoint 1: confirmed as stated above.
 - Checkpoint 2: scores are final, no challenges.
 
-Write the full analysis to docs/analysis/ and generate the HTML view.
+Write the analysis to docs/analysis/ and generate the HTML view.
