@@ -26,9 +26,19 @@ This analysis does not make a decision. It reports scores and evidence so the ow
 
 ## Scores
 
+Use the table that matches the frontmatter `mode` and delete the other.
+
+mode: full (10 factors, max 85)
+
 | Option | Fit | Baggage | Install | Integration | Maintenance | Dependencies | Lock-in | Cost | Time to value | Security | Total | % | Gates |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | <name> | <n> | <n> | <n> | <n> | <n> | <n> | <n> | <n> | <n> | <n> | <N>/<max> | <pct> | <pass or failed gate> |
+
+mode: quick (5 factors, max 60)
+
+| Option | Fit | Maintenance | Dependencies | Time to value | Security | Total | % | Gates |
+|---|---|---|---|---|---|---|---|---|
+| <name> | <n> | <n> | <n> | <n> | <n> | <N>/60 | <pct> | <pass or failed gate> |
 
 Per-option evidence and reasoning: see `candidates/<name>.md`.
 
