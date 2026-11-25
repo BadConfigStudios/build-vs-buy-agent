@@ -70,9 +70,11 @@ def _score_factor(option_name, factor, spec):
 
 
 def _score_option(option, environment, names, max_total):
-    if not isinstance(option, dict) or not option.get("name"):
+    if not isinstance(option, dict):
         raise ValueError("every option needs a name")
-    name = option["name"]
+    name = option.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"every option needs a non-empty string name, got {name!r}")
     if not isinstance(option.get("must_haves_met"), bool):
         raise ValueError(f"{name}: must_haves_met must be true or false")
     prerelease = option.get("prerelease", "none")
@@ -134,6 +136,10 @@ def evaluate(data):
     options = data.get("options")
     if not isinstance(options, list) or not options:
         raise ValueError("options must be a non-empty list")
+    names_seen = [o["name"] for o in options if isinstance(o, dict) and isinstance(o.get("name"), str)]
+    duplicates = sorted({n for n in names_seen if names_seen.count(n) > 1})
+    if duplicates:
+        raise ValueError(f"option names must be unique, duplicated: {duplicates}")
     max_total = 5 * sum(WEIGHTS[n] for n in names)
 
     results = [_score_option(o, environment, names, max_total) for o in options]
