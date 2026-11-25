@@ -214,5 +214,64 @@ class Cli(unittest.TestCase):
         self.assertIn("score.py:", proc.stderr)
 
 
+class MalformedShapes(unittest.TestCase):
+    def _with(self, mutate):
+        opt = option("X", uniform(4))
+        mutate(opt)
+        return opt
+
+    def test_factors_null(self):
+        with self.assertRaises(ValueError):
+            run([self._with(lambda o: o.__setitem__("factors", None))])
+
+    def test_factors_list(self):
+        with self.assertRaises(ValueError):
+            run([self._with(lambda o: o.__setitem__("factors", ["fit"]))])
+
+    def test_modifiers_null(self):
+        with self.assertRaises(ValueError):
+            run([self._with(lambda o: o["factors"]["fit"].__setitem__("modifiers", None))])
+
+    def test_modifiers_scalar(self):
+        with self.assertRaises(ValueError):
+            run([self._with(lambda o: o["factors"]["fit"].__setitem__("modifiers", 5))])
+
+    def test_options_scalar(self):
+        with self.assertRaises(ValueError):
+            score.evaluate({"environment": "production", "options": 5})
+
+
+class CloseCallBoundary(unittest.TestCase):
+    # Integer weighted totals over max 85 can never give a gap of exactly 8.5
+    # points (10.0%), so test the largest reachable gap at or under 10 and the
+    # smallest reachable gap over 10.
+    def test_largest_gap_within_ten_is_close(self):
+        # maintenance final 2 (-6 weighted), dependencies final 3 (-2) => diff 8 => 9.4%
+        a = option("A", uniform(4))
+        b = option("B", uniform(4, maintenance=2, dependencies=3))
+        result = run([a, b])
+        self.assertEqual(result["top_two_gap"], 9.4)
+        self.assertTrue(result["close_call"])
+
+    def test_smallest_gap_over_ten_is_not_close(self):
+        # maintenance final 1 (-9 weighted) => diff 9 => 10.6%
+        a = option("A", uniform(4))
+        b = option("B", uniform(4, maintenance=1))
+        result = run([a, b])
+        self.assertEqual(result["top_two_gap"], 10.6)
+        self.assertFalse(result["close_call"])
+
+
+class CliInvalidShape(unittest.TestCase):
+    def test_parseable_but_empty_options_exits_2(self):
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "score.py")],
+            input='{"environment":"production","options":[]}',
+            capture_output=True, text=True,
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("score.py:", proc.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

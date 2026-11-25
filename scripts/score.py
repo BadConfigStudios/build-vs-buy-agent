@@ -56,8 +56,11 @@ def _score_factor(option_name, factor, spec):
     base = spec.get("base")
     if not _is_int(base) or not 1 <= base <= 5:
         raise ValueError(f"{option_name}.{factor}: base must be an integer 1-5, got {base!r}")
+    mods = spec.get("modifiers", [])
+    if not isinstance(mods, list):
+        raise ValueError(f"{option_name}.{factor}: modifiers must be a list")
     delta_total = 0
-    for mod in spec.get("modifiers", []):
+    for mod in mods:
         delta = mod.get("delta") if isinstance(mod, dict) else None
         if not _is_int(delta):
             raise ValueError(f"{option_name}.{factor}: modifier delta must be an integer, got {delta!r}")
@@ -76,6 +79,8 @@ def _score_option(option, environment, names, max_total):
     if prerelease not in PRERELEASE:
         raise ValueError(f"{name}: prerelease must be one of {PRERELEASE}, got {prerelease!r}")
     factors_in = option.get("factors", {})
+    if not isinstance(factors_in, dict):
+        raise ValueError(f"{name}: factors must be an object")
     missing = [n for n in names if n not in factors_in]
     if missing:
         raise ValueError(f"{name}: missing factors {missing}")
@@ -127,7 +132,7 @@ def evaluate(data):
         raise ValueError(f"environment must be one of {ENVIRONMENTS}, got {environment!r}")
     names = _factor_names(mode)
     options = data.get("options")
-    if not options:
+    if not isinstance(options, list) or not options:
         raise ValueError("options must be a non-empty list")
     max_total = 5 * sum(WEIGHTS[n] for n in names)
 
