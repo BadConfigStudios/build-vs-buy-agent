@@ -83,9 +83,13 @@ class Readme(unittest.TestCase):
             self.assertIn(phrase, text, phrase)
 
     def test_no_private_details(self):
-        tracked = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True,
-                                 check=True).stdout.decode().split("\0")
+        try:
+            tracked = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True,
+                                     check=True).stdout.decode().split("\0")
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest("git ls-files unavailable")
         paths = [ROOT / p for p in tracked if p and not p.startswith("scripts/vendor/")]
+        paths = [p for p in paths if p.is_file()]
         checked = 0
         for path in paths:
             try:

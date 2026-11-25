@@ -58,6 +58,13 @@ class FinalTemplate(unittest.TestCase):
                 return [c.strip() for c in line.strip("|").split("|")], lines[i + 2]
         self.fail(f"no {mode} scores table labelled 'mode: {mode}'")
 
+    def test_mode_labels_state_computed_max(self):
+        full = 5 * sum(score.WEIGHTS.values())
+        quick = 5 * sum(score.WEIGHTS[k] for k in score.QUICK_FACTORS)
+        self.assertIn(f"mode: full (10 factors, max {full})", self.text)
+        self.assertIn(f"mode: quick ({len(score.QUICK_FACTORS)} factors, max {quick})", self.text)
+        self.assertIn(f"/{quick}", self.text)
+
     def test_full_table_factor_columns_match_weights(self):
         cols, _ = self._columns("full")
         factors = [FACTOR_LABELS[k] for k in score.WEIGHTS]
