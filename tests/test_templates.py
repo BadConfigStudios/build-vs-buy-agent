@@ -6,10 +6,16 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import build_html  # noqa: E402
+import score  # noqa: E402
 
 TEMPLATES = ROOT / "skills" / "build-vs-buy" / "templates"
 FACTORS = ["Fit", "Unused baggage", "Install effort", "Integration effort", "Maintenance effort",
            "Dependency count", "Lock-in and exit cost", "Monetary cost", "Time to value", "Security"]
+FACTOR_LABELS = {
+    "fit": "Fit", "unused_baggage": "Baggage", "install": "Install", "integration": "Integration",
+    "maintenance": "Maintenance", "dependencies": "Dependencies", "lock_in": "Lock-in", "cost": "Cost",
+    "time_to_value": "Time to value", "security": "Security",
+}
 HEADER = "| Factor | Base | Modifiers | Final | Why (matrix condition met) | Evidence (source, retrieved) | Status |"
 
 
@@ -43,6 +49,27 @@ class FinalTemplate(unittest.TestCase):
         _, scores = build_html.split_scores(self.text)
         self.assertIsNotNone(scores)
         self.assertIn("| Option |", scores)
+
+    def _columns(self, mode):
+        _, scores = build_html.split_scores(self.text)
+        lines = scores.splitlines()
+        for i, line in enumerate(lines):
+            if line.startswith("| Option |") and any(f"mode: {mode}" in l for l in lines[max(0, i - 3):i]):
+                return [c.strip() for c in line.strip("|").split("|")], lines[i + 2]
+        self.fail(f"no {mode} scores table labelled 'mode: {mode}'")
+
+    def test_full_table_factor_columns_match_weights(self):
+        cols, _ = self._columns("full")
+        factors = [FACTOR_LABELS[k] for k in score.WEIGHTS]
+        self.assertEqual(cols, ["Option"] + factors + ["Total", "%", "Gates"])
+        self.assertEqual(5 * sum(score.WEIGHTS.values()), 85)
+
+    def test_quick_table_factor_columns_match_quick_factors(self):
+        cols, row = self._columns("quick")
+        factors = [FACTOR_LABELS[k] for k in score.QUICK_FACTORS]
+        self.assertEqual(cols, ["Option"] + factors + ["Total", "%", "Gates"])
+        self.assertIn("/60", row)
+        self.assertEqual(5 * sum(score.WEIGHTS[k] for k in score.QUICK_FACTORS), 60)
 
     def test_required_sections(self):
         for heading in ("## Context", "## Stack summary", "## Scores", "## Ranking",
