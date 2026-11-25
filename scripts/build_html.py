@@ -16,7 +16,9 @@ SCORES_HEADING = re.compile(r"^## Scores[ \t]*$", re.M)
 ANY_H2 = re.compile(r"^## ", re.M)
 TOPIC = re.compile(r"^topic:[ \t]*(.+?)[ \t]*$", re.M)
 H1 = re.compile(r"^# (.+?)[ \t]*$", re.M)
-FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# Optional blockquote markers, then up to 3 spaces of indent, then the fence run
+# and the rest of the line (info string).
+FENCE = re.compile(r"^(?: {0,3}>[ \t]?(?:>[ \t]?)*)? {0,3}(`{3,}|~{3,})(.*)$", re.S)
 PLACEHOLDER = re.compile(r"__(TITLE|DATA|MARKED)__")
 
 TEMPLATE = r"""<!doctype html>
@@ -127,6 +129,8 @@ def _mask_fences(md):
     marker = None
     for line in md.splitlines(keepends=True):
         fence = FENCE.match(line)
+        if fence and fence.group(1)[0] == "`" and "`" in fence.group(2):
+            fence = None  # backtick info string may not contain a backtick
         if marker is None:
             if fence:
                 marker = fence.group(1)
@@ -136,7 +140,7 @@ def _mask_fences(md):
         else:
             out.append(re.sub(r"[^\r\n]", " ", line))
             if fence and fence.group(1)[0] == marker[0] and len(fence.group(1)) >= len(marker) \
-                    and not line.strip().strip(marker[0]):
+                    and not fence.group(2).strip():
                 marker = None
     return "".join(out)
 

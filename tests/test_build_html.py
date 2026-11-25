@@ -249,6 +249,53 @@ class CodeFenceHeadings(unittest.TestCase):
             labels = [t["label"] for t in tabs_of(build_html.build(run).read_text(encoding="utf-8"))]
             self.assertEqual(labels[-1], "c")
 
+    def test_backtick_info_string_with_backtick_is_not_a_fence(self):
+        md = "``` a`b\n\n## Scores\n\n| a |\n"
+        summary, scores = build_html.split_scores(md)
+        self.assertEqual(scores, "## Scores\n\n| a |\n")
+
+    def test_tilde_info_string_may_contain_backtick(self):
+        summary, scores = build_html.split_scores("~~~ a`b\n## Scores\n~~~\n")
+        self.assertIsNone(scores)
+
+    def test_backtick_fence_with_plain_info_string_masks(self):
+        summary, scores = build_html.split_scores("```python\n## Scores\n```\n")
+        self.assertIsNone(scores)
+
+    def test_blockquote_fence_is_masked(self):
+        md = "> ```\n> ## Scores\n> # Title\n> ```\nafter\n"
+        masked = build_html._mask_fences(md)
+        self.assertEqual(masked, " " * 5 + "\n" + " " * 11 + "\n" + " " * 9 + "\n" + " " * 5 + "\nafter\n")
+
+    def test_blockquote_fence_masks_nested_quote_and_indent(self):
+        masked = build_html._mask_fences(">> ```\n>> ## Scores\n>> ```\n")
+        self.assertEqual(masked.strip(), "")
+
+    def test_blockquote_fence_closes_before_following_text(self):
+        masked = build_html._mask_fences("> ```\n> x\n> ```\n## Scores\n")
+        self.assertTrue(masked.endswith("## Scores\n"))
+        self.assertEqual(masked[:masked.index("## Scores")].strip(), "")
+
+    def test_blockquote_fence_closes_and_real_scores_found(self):
+        md = "> ```\n> ## Scores\n> ```\n\n## Scores\n\n| a |\n"
+        summary, scores = build_html.split_scores(md)
+        self.assertEqual(scores, "## Scores\n\n| a |\n")
+
+    def test_masking_preserves_length(self):
+        md = "> ```\n> ## Scores\n> ```\n``` a`b\n~~~\nx\n"
+        self.assertEqual(len(build_html._mask_fences(md)), len(md))
+
+    def test_indented_fence_masks_and_four_spaces_does_not(self):
+        self.assertIsNone(build_html.split_scores("   ```\n## Scores\n   ```\n")[1])
+        self.assertIsNotNone(build_html.split_scores("    ```\n## Scores\n")[1])
+
+    def test_longer_closing_fence_closes(self):
+        md = "```\n## Scores\n`````\n\n## Scores\n\nx\n"
+        self.assertEqual(build_html.split_scores(md)[1], "## Scores\n\nx\n")
+
+    def test_unterminated_fence_masks_to_eof(self):
+        self.assertIsNone(build_html.split_scores("```\nx\n## Scores\n")[1])
+
 
 class Frontmatter(unittest.TestCase):
     def test_crlf_frontmatter_parses(self):
