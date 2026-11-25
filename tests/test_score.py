@@ -225,8 +225,46 @@ class MalformedShapes(unittest.TestCase):
             run([self._with(lambda o: o.__setitem__("factors", None))])
 
     def test_factors_list(self):
+        # A list holding every factor name passes the "missing" membership
+        # check, so only the isinstance guard rejects it (otherwise TypeError).
         with self.assertRaises(ValueError):
-            run([self._with(lambda o: o.__setitem__("factors", ["fit"]))])
+            run([self._with(lambda o: o.__setitem__("factors", list(FULL)))])
+
+    def test_name_non_string(self):
+        for bad in (5, ["a"], {"a": 1}, True):
+            with self.subTest(name=bad):
+                with self.assertRaises(ValueError):
+                    run([self._with(lambda o: o.__setitem__("name", bad))])
+
+    def test_name_empty_or_blank(self):
+        for bad in ("", "   ", None):
+            with self.subTest(name=bad):
+                with self.assertRaises(ValueError):
+                    run([self._with(lambda o: o.__setitem__("name", bad))])
+
+    def test_duplicate_names(self):
+        with self.assertRaises(ValueError):
+            run([option("X", uniform(4)), option("X", uniform(3))])
+
+    def test_duplicate_names_after_strip(self):
+        with self.assertRaises(ValueError):
+            run([option("X", uniform(4)), option("X ", uniform(3))])
+
+    def test_non_object_option_message(self):
+        with self.assertRaisesRegex(ValueError, "must be an object"):
+            run([5])
+
+    def test_environment_odd_types(self):
+        for bad in (None, 5, [], ["production"], {}, {"a": 1}, True):
+            with self.subTest(environment=bad):
+                with self.assertRaises(ValueError):
+                    run([option("X", uniform(4))], environment=bad)
+
+    def test_prerelease_odd_types(self):
+        for bad in (None, 5, [], ["none"], {}, True):
+            with self.subTest(prerelease=bad):
+                with self.assertRaises(ValueError):
+                    run([option("X", uniform(4), prerelease=bad)])
 
     def test_modifiers_null(self):
         with self.assertRaises(ValueError):

@@ -16,6 +16,7 @@ SCORES_HEADING = re.compile(r"^## Scores[ \t]*$", re.M)
 ANY_H2 = re.compile(r"^## ", re.M)
 TOPIC = re.compile(r"^topic:[ \t]*(.+?)[ \t]*$", re.M)
 H1 = re.compile(r"^# (.+?)[ \t]*$", re.M)
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 PLACEHOLDER = re.compile(r"__(TITLE|DATA|MARKED)__")
 
 TEMPLATE = r"""<!doctype html>
@@ -78,8 +79,13 @@ a { color:var(--accent); }
   };
   renderer.link = function (href, title, text) {
     if (!/^(https?:|mailto:|#)/i.test(href || "")) { return text; }
-    return '<a href="' + esc(href) + '"' + (title ? ' title="' + esc(title) + '"' : "") +
-      ' rel="noopener noreferrer">' + text + "</a>";
+    var inner = String(text).replace(/<a [^>]*>([\s\S]*?)<\/a>/g, "$1");
+    return '<a href="' + esc(href) + '"' + (title ? ' title="' + title + '"' : "") +
+      ' rel="noopener noreferrer">' + inner + "</a>";
+  };
+  renderer.image = function (href, title, text) {
+    if (!/^https?:/i.test(href || "")) { return text; }
+    return '<a href="' + esc(href) + '" rel="noopener noreferrer">' + text + "</a>";
   };
   marked.use({ renderer: renderer });
 
@@ -114,12 +120,40 @@ a { color:var(--accent); }
 """
 
 
+def _mask_fences(md):
+    """Blank out fenced code blocks (same length, newlines kept) so heading
+    regexes cannot match inside them; offsets still index the original text."""
+    out = []
+    marker = None
+    for line in md.splitlines(keepends=True):
+        fence = FENCE.match(line)
+        if marker is None:
+            if fence:
+                marker = fence.group(1)
+                out.append(re.sub(r"[^\r\n]", " ", line))
+            else:
+                out.append(line)
+        else:
+            out.append(re.sub(r"[^\r\n]", " ", line))
+            if fence and fence.group(1)[0] == marker[0] and len(fence.group(1)) >= len(marker) \
+                    and not line.strip().strip(marker[0]):
+                marker = None
+    return "".join(out)
+
+
+def _unquote(value):
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
+
+
 def split_scores(md):
     """Return (summary, scores). scores is None when there is no '## Scores' section."""
-    match = SCORES_HEADING.search(md)
+    masked = _mask_fences(md)
+    match = SCORES_HEADING.search(masked)
     if not match:
         return md, None
-    rest = md[match.end():]
+    rest = masked[match.end():]
     following = ANY_H2.search(rest)
     end = match.end() + (following.start() if following else len(rest))
     scores = md[match.start():end].strip() + "\n"
@@ -134,12 +168,16 @@ def _split_frontmatter(md):
     return match.group(1), md[match.end():]
 
 
+def _read(path):
+    return path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def build(run_dir):
     run = pathlib.Path(run_dir)
     final = run / "final.md"
     if not final.is_file():
         raise FileNotFoundError(f"final.md not found in {run}")
-    meta, body = _split_frontmatter(final.read_text(encoding="utf-8"))
+    meta, body = _split_frontmatter(_read(final))
     summary, scores = split_scores(body)
     if meta:
         summary = "```yaml\n" + meta + "\n```\n\n" + summary
@@ -149,12 +187,12 @@ def build(run_dir):
     cdir = run / "candidates"
     if cdir.is_dir():
         for path in sorted(cdir.glob("*.md")):
-            text = path.read_text(encoding="utf-8")
-            heading = H1.search(text)
+            text = _read(path)
+            heading = H1.search(_mask_fences(text))
             tabs.append({"label": heading.group(1) if heading else path.stem, "markdown": text})
 
     topic = TOPIC.search(meta) if meta else None
-    title = topic.group(1) if topic else run.name
+    title = _unquote(topic.group(1)) if topic else run.name
     marked = VENDOR.read_text(encoding="utf-8")
     if "</script" in marked.lower():
         raise ValueError("vendored marked.min.js contains a closing script tag")
