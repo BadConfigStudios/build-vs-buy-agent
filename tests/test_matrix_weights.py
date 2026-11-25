@@ -21,6 +21,10 @@ NAMES = {
     "Security": "security",
 }
 FORBIDDEN = ("Argo", "Kyverno", "Cloudflare", "BadConfig", "Bryan")
+WEIGHT_LINE = re.compile(r"^- (.+?): (\d+)$", re.M)
+EXAMPLES = sorted((ROOT / "docs" / "examples").glob("*.md"))
+# Examples may name Cloudflare as a real vendor candidate; project-specific names stay forbidden.
+EXAMPLES_ALLOWED = ("Cloudflare",)
 
 
 class MatrixWeights(unittest.TestCase):
@@ -30,8 +34,18 @@ class MatrixWeights(unittest.TestCase):
     def test_step3_weights_match_score_py(self):
         section = self.text.split("## Step 3", 1)[1].split("## Step 4", 1)[0]
         found = {NAMES[m.group(1)]: int(m.group(2))
-                 for m in re.finditer(r"^- (.+?): (\d)$", section, re.M)}
+                 for m in WEIGHT_LINE.finditer(section)}
         self.assertEqual(found, score.WEIGHTS)
+
+    def test_weight_regex_accepts_multi_digit(self):
+        m = WEIGHT_LINE.search("- Fit: 12")
+        self.assertEqual(m.group(2), "12")
+
+    def test_names_cover_score_weights(self):
+        self.assertEqual(set(NAMES.values()), set(score.WEIGHTS))
+
+    def test_no_dangling_policy_penalty(self):
+        self.assertNotIn("policy penalty", self.text)
 
     def test_total_weight_and_max(self):
         self.assertIn("Total weight is 17", self.text)
@@ -41,6 +55,14 @@ class MatrixWeights(unittest.TestCase):
     def test_no_project_specific_names(self):
         for word in FORBIDDEN:
             self.assertNotIn(word, self.text, word)
+
+    def test_no_project_specific_names_in_examples(self):
+        self.assertTrue(EXAMPLES)
+        for path in EXAMPLES:
+            text = path.read_text(encoding="utf-8")
+            for word in FORBIDDEN:
+                if word not in EXAMPLES_ALLOWED:
+                    self.assertNotIn(word, text, f"{path.name}: {word}")
 
     def test_declares_v1_3_and_stack_summary(self):
         self.assertIn("Version 1.3", self.text)

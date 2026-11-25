@@ -16,7 +16,7 @@ Before looking at any tool, write down all five of these and do not edit them af
 2. Target environment: production, or a lower one (dev, test cluster). Pre-release software (an unstable beta or alpha) may be considered only for a lower environment, and only because it was declared up front. In production, an unstable beta or alpha fails the gate. The declared environment goes in the decision record so it cannot quietly drift upward later.
 3. Business stage: pre-revenue, break-even or steady, or strong revenue. This sets the stage modifier on the cost score (see Monetary cost).
 4. Expected growth: the volume or user count the owner expects to reach, for example ten times the current level. This is the yardstick for the scaling modifier on Fit.
-5. Stack summary: what already runs, which deployment and operating models are in use, and which policies or guardrails constrain new tools. It is drafted from the repo docs, confirmed by the owner, and locked with the other items. The Integration alignment modifier and the policy penalty are judged against it.
+5. Stack summary: what already runs, which deployment and operating models are in use, and which policies or guardrails constrain new tools. It is drafted from the repo docs, confirmed by the owner, and locked with the other items. Integration alignment is judged against the stack summary's policies and guardrails.
 
 ## Step 1: Hard gates (pass or fail)
 
