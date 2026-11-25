@@ -1,6 +1,7 @@
 import json
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -49,6 +50,40 @@ def make_run(final=FINAL, candidates=None):
 def tabs_of(page):
     match = re.search(r'<script id="bvb-data" type="application/json">(.*?)</script>', page, re.S)
     return json.loads(match.group(1))
+
+
+NODE = shutil.which("node")
+
+NODE_DRIVER = r"""
+const fs = require("fs"), vm = require("vm");
+const [pagePath] = process.argv.slice(2);
+const page = fs.readFileSync(pagePath, "utf8");
+const scripts = [...page.matchAll(/<script(?: id="bvb-data" type="application\/json")?>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+const [data, marked, inline] = scripts;
+const panels = [];
+const el = () => ({ children: [], setAttribute() {}, addEventListener() {}, appendChild(c) { this.children.push(c); } });
+const document = {
+  getElementById: id => id === "bvb-data" ? { textContent: data } : el(),
+  createElement: () => { const e = el(); panels.push(e); return e; },
+};
+const ctx = vm.createContext({ document });
+vm.runInContext(marked, ctx);
+vm.runInContext(inline, ctx);
+console.log(JSON.stringify(panels.filter(p => "innerHTML" in p).map(p => p.innerHTML)));
+"""
+
+
+def render_panels(markdown_by_tab):
+    """Run the generated page's JS under node; return rendered HTML per panel."""
+    tmp, run = make_run(final=markdown_by_tab)
+    with tmp:
+        page = build_html.build(run)
+        driver = run / "driver.js"
+        driver.write_text(NODE_DRIVER, encoding="utf-8")
+        proc = subprocess.run([NODE, str(driver), str(page)], capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise AssertionError(proc.stderr)
+        return json.loads(proc.stdout)
 
 
 class SplitScores(unittest.TestCase):
@@ -136,6 +171,112 @@ class Build(unittest.TestCase):
         with tmp:
             with self.assertRaises(FileNotFoundError):
                 build_html.build(run)
+
+
+class Rendering(unittest.TestCase):
+    def test_renderer_source_overrides_image_and_does_not_double_escape(self):
+        tmp, run = make_run()
+        with tmp:
+            page = build_html.build(run).read_text(encoding="utf-8")
+            self.assertIn("renderer.image", page)
+            self.assertNotIn("esc(title)", page)
+            self.assertIn("img-src data:", page)
+
+    @unittest.skipUnless(NODE, "node not installed")
+    def test_link_title_not_double_escaped(self):
+        out = render_panels('[a](https://x.test "T&C \\"q\\"")\n')[0]
+        self.assertIn('title="T&amp;C &quot;q&quot;"', out)
+        self.assertNotIn("&amp;amp;", out)
+        self.assertNotIn("&amp;quot;", out)
+
+    @unittest.skipUnless(NODE, "node not installed")
+    def test_remote_image_becomes_plain_link(self):
+        out = render_panels("![Logo & co](https://x.test/a.png)\n")[0]
+        self.assertNotIn("<img", out)
+        self.assertIn('<a href="https://x.test/a.png"', out)
+        self.assertIn(">Logo &amp; co</a>", out)
+
+    @unittest.skipUnless(NODE, "node not installed")
+    def test_non_http_image_is_alt_text_only(self):
+        for src in ("javascript:alert(1)", "data:image/png;base64,AAAA", "./local.png"):
+            with self.subTest(src=src):
+                out = render_panels(f"![Alt <x>]({src})\n")[0]
+                self.assertNotIn("<img", out)
+                self.assertNotIn("<a ", out)
+                self.assertIn("Alt &lt;x&gt;", out)
+
+
+class CodeFenceHeadings(unittest.TestCase):
+    def test_fenced_scores_heading_ignored(self):
+        md = "# T\n\n```\n## Scores\n| a |\n```\n\ntext\n"
+        summary, scores = build_html.split_scores(md)
+        self.assertIsNone(scores)
+        self.assertIn("## Scores", summary)
+
+    def test_fenced_h2_does_not_end_scores_section(self):
+        md = "## Scores\n\n```\n## not a heading\n```\n\nmore\n\n## Next\n\nx\n"
+        summary, scores = build_html.split_scores(md)
+        self.assertIn("more", scores)
+        self.assertIn("## not a heading", scores)
+        self.assertNotIn("## Next", scores)
+        self.assertIn("## Next", summary)
+
+    def test_tilde_fence_also_ignored(self):
+        summary, scores = build_html.split_scores("~~~\n## Scores\n~~~\n")
+        self.assertIsNone(scores)
+
+    def test_real_scores_after_fence_still_found(self):
+        md = "```\n## Scores\n```\n\n## Scores\n\n| a |\n"
+        summary, scores = build_html.split_scores(md)
+        self.assertEqual(scores, "## Scores\n\n| a |\n")
+
+    def test_candidate_label_skips_fenced_h1(self):
+        tmp, run = make_run(candidates={"c.md": "```\n# not a title\n```\n\n# Real\n"})
+        with tmp:
+            labels = [t["label"] for t in tabs_of(build_html.build(run).read_text(encoding="utf-8"))]
+            self.assertEqual(labels[-1], "Real")
+
+    def test_candidate_label_falls_back_when_only_fenced_h1(self):
+        tmp, run = make_run(candidates={"c.md": "```\n# not a title\n```\n"})
+        with tmp:
+            labels = [t["label"] for t in tabs_of(build_html.build(run).read_text(encoding="utf-8"))]
+            self.assertEqual(labels[-1], "c")
+
+
+class Frontmatter(unittest.TestCase):
+    def test_crlf_frontmatter_parses(self):
+        final = "---\r\ntopic: crlf topic\r\nstatus: analysis\r\n---\r\n\r\n# T\r\n\r\n## Scores\r\n\r\n| a |\r\n"
+        tmp, run = make_run(final=None)
+        with tmp:
+            (run / "final.md").write_bytes(final.encode("utf-8"))
+            page = build_html.build(run).read_text(encoding="utf-8")
+            self.assertIn("<title>crlf topic</title>", page)
+            tabs = tabs_of(page)
+            self.assertIn("```yaml", tabs[0]["markdown"])
+            self.assertEqual([t["label"] for t in tabs], ["Summary", "Scores"])
+            self.assertNotIn("\r", tabs[0]["markdown"])
+
+    def test_crlf_candidate_label(self):
+        tmp, run = make_run(candidates={})
+        with tmp:
+            (run / "candidates").mkdir()
+            (run / "candidates" / "c.md").write_bytes(b"# Title\r\n\r\nx\r\n")
+            tabs = tabs_of(build_html.build(run).read_text(encoding="utf-8"))
+            self.assertEqual(tabs[-1]["label"], "Title")
+
+    def test_quoted_topic_unquoted(self):
+        for raw, want in (('"secret rotation"', "secret rotation"), ("'secret rotation'", "secret rotation"),
+                          ('"a: b"', "a: b"), ("plain", "plain"), ('"unterminated', '"unterminated')):
+            with self.subTest(raw=raw):
+                tmp, run = make_run(final=f"---\ntopic: {raw}\n---\n\n# T\n")
+                with tmp:
+                    page = build_html.build(run).read_text(encoding="utf-8")
+                    self.assertIn(f"<title>{html_escape(want)}</title>", page)
+
+
+def html_escape(s):
+    import html
+    return html.escape(s)
 
 
 class Cli(unittest.TestCase):
