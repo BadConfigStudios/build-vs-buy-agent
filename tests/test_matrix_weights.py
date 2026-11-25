@@ -21,6 +21,9 @@ NAMES = {
     "Security": "security",
 }
 FORBIDDEN = ("Argo", "Kyverno", "Cloudflare", "BadConfig", "Bryan")
+EXAMPLES = sorted((ROOT / "docs" / "examples").glob("*.md"))
+# Examples may name Cloudflare as a real vendor candidate; project-specific names stay forbidden.
+EXAMPLES_ALLOWED = ("Cloudflare",)
 
 
 class MatrixWeights(unittest.TestCase):
@@ -51,6 +54,14 @@ class MatrixWeights(unittest.TestCase):
     def test_no_project_specific_names(self):
         for word in FORBIDDEN:
             self.assertNotIn(word, self.text, word)
+
+    def test_no_project_specific_names_in_examples(self):
+        self.assertTrue(EXAMPLES)
+        for path in EXAMPLES:
+            text = path.read_text(encoding="utf-8")
+            for word in FORBIDDEN:
+                if word not in EXAMPLES_ALLOWED:
+                    self.assertNotIn(word, text, f"{path.name}: {word}")
 
     def test_declares_v1_3_and_stack_summary(self):
         self.assertIn("Version 1.3", self.text)
