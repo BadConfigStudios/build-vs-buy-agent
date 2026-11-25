@@ -50,6 +50,8 @@ def render_final(result):
     text = text.replace("<topic>", "pipeline fixture")
     header = re.search(r"^\| Option \|.*\n\|[-| ]+\|\n", text, re.M)
     row_pat = re.compile(r"^\| <name> \|.*\n", re.M)
+    if not (header and row_pat.search(text)):
+        raise RuntimeError("final.md template lost its score table")
     rows = []
     for opt in result["options"]:
         cells = [str(opt["factors"][f]["final"]) for f in FACTORS]
@@ -58,8 +60,6 @@ def render_final(result):
         rows.append("| " + " | ".join(
             [opt["name"], *cells,
              f'{opt["weighted_total"]}/{result["max_total"]}', str(opt["percentage"]), gate]) + " |\n")
-    if not (header and row_pat.search(text)):
-        raise RuntimeError("final.md template lost its score table")
     table = "".join(rows)
     return row_pat.sub(lambda m: table, text, count=1)
 
@@ -93,9 +93,11 @@ class PipelineTest(unittest.TestCase):
         if built.returncode != 0:
             raise RuntimeError(built.stderr)
         cls.page = (cls.run_dir / "index.html").read_text(encoding="utf-8")
-        data = re.search(r'<script id="bvb-data" type="application/json">(.*?)</script>',
-                         cls.page, re.S).group(1)
-        cls.tabs = json.loads(data)
+        found = re.search(r'<script id="bvb-data" type="application/json">(.*?)</script>',
+                          cls.page, re.S)
+        if not found:
+            raise RuntimeError("bvb-data block missing from built page")
+        cls.tabs = json.loads(found.group(1))
 
     def test_tab_set_is_summary_scores_then_one_per_candidate(self):
         labels = [t["label"] for t in self.tabs]
@@ -103,9 +105,11 @@ class PipelineTest(unittest.TestCase):
 
     def test_scores_tab_totals_match_known_values(self):
         scores_md = next(t["markdown"] for t in self.tabs if t["label"] == "Scores")
-        for total, pct in [("63/85", "74.1"), ("66/85", "77.6"), ("85/85", "100.0")]:
-            self.assertIn(total, scores_md)
-            self.assertIn(pct, scores_md)
+        for name, total, pct in [("Alpha Tool", "63/85", "74.1"), ("Build", "66/85", "77.6"),
+                                 ("Risky Beta", "85/85", "100.0")]:
+            row = next((ln for ln in scores_md.splitlines() if ln.startswith(f"| {name} |")), None)
+            self.assertIsNotNone(row, name)
+            self.assertIn(f"| {total} | {pct} |", row)
 
     def test_candidate_tabs_carry_known_totals(self):
         expected = {"Alpha Tool": "63/85 (74.1%)", "Build": "66/85 (77.6%)", "Risky Beta": "85/85 (100.0%)"}
