@@ -14,14 +14,14 @@ Also fixed in 0.2.0: the 0.1.0 skill offered to reuse earlier research on a same
 |---|---|---|
 | orchestrator | the `build-vs-buy` skill in the main thread: interview, checkpoints, overrides, writing files | `model:` in skill frontmatter, if verified; otherwise the session model |
 | researcher | `bvb-researcher` agent (exists), read-only, never scores | agent `model:` (sonnet today) |
-| scorer | new `bvb-scorer` agent, read-only (`tools: Read, Grep, Glob`), scores ONE candidate | agent `model:` |
+| scorer | new `bvb-scorer` agent, read-only (`tools: Read, Grep, Glob`), scores each report independently; the production flow passes one report per call | agent `model:` |
 | writer | 0.4.0, one per candidate, narrative sections only | agent `model:` |
 
 Every role pins a default model in its skill or agent frontmatter; any can be overridden per call or by the harness `--model`. Initial defaults, to be revised from drift data: orchestrator sonnet, researcher sonnet, scorer sonnet, writer haiku (guarded by the 0.4.0 validator). Resolution order per the docs: per-call model, then the agent's `model:`, then `CLAUDE_CODE_SUBAGENT_MODEL`, then the parent's model.
 
 The orchestrator stays in the main thread because it talks to the owner. Subagents may nest (docs: up to three layers), so this is a choice, not a limit.
 
-Scorer: input is the locked Step 0 block, `matrix.md` and ONE candidate's researcher report; output is that candidate's `score.py` input entry with a Why per factor. It carries the researcher's no-recommendation and prompt-injection rules. The full run executes one `researcher -> scorer` chain per candidate in parallel (a writer joins the chain in 0.4.0). The orchestrator merges the entries, runs `score.py`, shows Checkpoint 2 and handles overrides (edit the JSON, rerun, record `original -> new`).
+Scorer: input is the locked Step 0 block, `matrix.md` and one or more researcher reports; output is one `score.py` input entry per report, each with a Why per factor. The production flow passes exactly one report per call; the centralized test topology passes all of them. It carries the researcher's no-recommendation and prompt-injection rules. The full run executes one `researcher -> scorer` chain per candidate in parallel (a writer joins the chain in 0.4.0). The orchestrator merges the entries, runs `score.py`, shows Checkpoint 2 and handles overrides (edit the JSON, rerun, record `original -> new`).
 
 ### Why independent scorers (decided 2026-11-26)
 
@@ -36,13 +36,13 @@ The harness keeps `--topology independent|centralized` so the data can overrule 
 Per current plugin guidance, new components are skills; `commands/` is the older format.
 
 - `/build-vs-buy:build-vs-buy`: the full run (unchanged name; orchestrator is a role name only).
-- `/build-vs-buy:researcher`, `/build-vs-buy:scorer`: standalone stages that take file paths, with `model:` pins and `context: fork` plus `agent:`. The writer follows in 0.4.0.
+- `/build-vs-buy:researcher`, `/build-vs-buy:scorer`: standalone stages that take file paths and an optional `--model`. Each dispatches the stage's agent; the agent file pins the default model and a per-call model overrides it. (A model pinned on a forked skill would override the harness's `--model`, so the pin lives in the agent.) The writer follows in 0.4.0.
 - The locked context is written to a file at Checkpoint 1 in one defined format, which the standalone stages read.
 - The standalone scorer taking a reports directory is for tests and re-scoring. The production flow always dispatches fresh researchers.
 
 Cleanup in the same task: the same-name command is expected to be shadowed by the skill (skill wins on a name clash). Verify, fold `argument-hint` into the skill, delete `commands/build-vs-buy.md`. Replace the relative script path with `${CLAUDE_PLUGIN_ROOT}/scripts/...`. Add `claude plugin validate --strict` to the checks.
 
-Verify before relying on them (not documented): the namespaced `agent:` value for a plugin agent; `claude -p "/build-vs-buy:scorer ..."` with `--plugin-dir`; the shadowing above.
+Verify before relying on them (not documented): the subagent dispatch name that resolves (`bvb-scorer` or `build-vs-buy:bvb-scorer`) and that a per-call `model` beats the agent's pinned model; `claude -p "/build-vs-buy:scorer ..."` with `--plugin-dir`; the shadowing above.
 
 ## Fixture
 

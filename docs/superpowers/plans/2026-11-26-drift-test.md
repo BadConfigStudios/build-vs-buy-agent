@@ -2059,6 +2059,17 @@ Append `drift-runs/` on its own line to `.gitignore`.
 Run: `python3 -m unittest discover -s tests`
 Expected: all pass.
 
+- [ ] **Step 4b: Smoke-test context mode once (up to 1.50 USD, needs the owner's go-ahead)**
+
+Headless `-p` is one-shot, so the skill might stop at Checkpoint 1 to wait for confirmation and never write `locked-context.md`. Check before trusting context mode:
+
+```bash
+bash tools/drift/run.sh --out /tmp/drift-smoke --mode context --arm with-docs --runs 1
+ls /tmp/drift-smoke/context-with-docs/run-1/
+```
+
+Expected: `locked-context.md` and `session.out.json`. If `locked-context.md` is missing, change only the wording of `tools/drift/fixtures/context-prompt.md` (for example, state more plainly that the owner confirms Checkpoint 1 exactly as shown, so the run continues). Do not weaken the skill's confirmation rule, and do not make the harness write the file itself. If two prompt rewordings do not work, stop and report to the owner: context mode cannot run headless as designed.
+
 - [ ] **Step 5: Commit, push, open PR G**
 
 ```bash
