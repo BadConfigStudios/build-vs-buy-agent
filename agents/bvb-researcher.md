@@ -9,7 +9,7 @@ You research exactly one candidate for a build-vs-buy analysis and return eviden
 
 ## Input you receive
 
-Candidate name and type (hosted or self-hosted version of a tool count as different candidates), the owner's must-haves (now, deferred, nice-to-have), declared environment, business stage, expected growth, and the confirmed stack summary.
+Candidate name and type (hosted or self-hosted version of a tool count as different candidates), the owner's must-haves (now, deferred, nice-to-have), declared environment, business stage, expected growth, and the confirmed stack summary. Instead of the items after the name and type, you may receive the path of a locked-context file that holds them; read that file.
 
 ## Rules
 

@@ -1,4 +1,5 @@
 import pathlib
+import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -64,6 +65,40 @@ class StageSkills(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         for phrase in ("/build-vs-buy:researcher", "/build-vs-buy:scorer"):
             self.assertIn(phrase, readme, phrase)
+
+    def test_scorer_accepts_only_markdown_paths(self):
+        _, body = read("scorer")
+        self.assertIn("The locked-context file and every report file must end in `.md`, and no path may start with `-`; otherwise stop and ask instead of dispatching.", body)
+
+    def test_researcher_accepts_only_a_markdown_locked_context(self):
+        _, body = read("researcher")
+        self.assertIn("The locked-context file must end in `.md`, and its path may not start with `-`; otherwise stop and ask instead of dispatching.", body)
+
+    def test_researcher_agent_accepts_a_locked_context_file(self):
+        text = (ROOT / "agents" / "bvb-researcher.md").read_text(encoding="utf-8")
+        section = text.split("## Input you receive", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("path of a locked-context file", section)
+        self.assertIn("read that file", section)
+
+    def test_readme_documents_argument_rules(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("`--model` may appear anywhere", readme)
+        self.assertIn("File paths must contain no spaces", readme)
+
+    def test_both_stop_and_ask_on_bad_arguments(self):
+        for name, missing in (("scorer", "or there is no report"), ("researcher", "or there is no candidate name")):
+            _, body = read(name)
+            self.assertIn(f"If the locked-context file is missing {missing}, stop and ask instead of dispatching.", body, name)
+            self.assertIn("File paths must contain no spaces.", body, name)
+            self.assertIn("model alias such as `sonnet`", body, name)
+
+    def test_every_plugin_root_path_in_skills_resolves(self):
+        found = []
+        for path in SKILLS.rglob("*.md"):
+            found += re.findall(r"\$\{CLAUDE_PLUGIN_ROOT\}/([\w./-]*\w)", path.read_text(encoding="utf-8"))
+        self.assertIn("scripts/score.py", found)
+        for rel in found:
+            self.assertTrue((ROOT / rel).is_file(), rel)
 
 
 if __name__ == "__main__":
