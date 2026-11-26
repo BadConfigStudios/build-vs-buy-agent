@@ -98,3 +98,23 @@ Matrix calibration (0.3.0); renderer, writer, validator (0.4.0); threshold gatin
 
 - Exact `model:` pin behaviour on skills (verify in the first task).
 - Spike outcome: eval versus custom loop.
+
+## Verification results
+
+Run on 2026-11-26, Claude Code 2.1.332. Scratch copy of the plugin at `<scratch>/plugin`, built with `git archive HEAD`.
+
+| Question | Result |
+|---|---|
+| A skill and a command with the same name: which runs? | command wins: with `commands/build-vs-buy.md` reduced to "Reply with exactly COMMAND-RAN", `/build-vs-buy:build-vs-buy test topic` returned `COMMAND-RAN` |
+| `${CLAUDE_PLUGIN_ROOT}` substituted in a skill body? | yes: `ROOT=<scratch>/plugin` (a real path) |
+| `$ARGUMENTS` substituted in a skill body? | yes: `ARGS=a b` and `ARGS=--model opus x` |
+| `model:` pin on a skill applied to the turn? | yes (`claude-haiku-5-5` in modelUsage on both runs) |
+| Per-call `model` on a subagent dispatch beats the agent's pinned model? | yes (run 2 modelUsage: `claude-haiku-5-5` and `claude-opus-5-5`, no sonnet; run 1 without override: haiku and `claude-sonnet-5-5`) |
+| Subagent dispatch name that resolves | `build-vs-buy:bvb-ping` (bare `bvb-ping` fails: "Agent type 'bvb-ping' not found. Available agents: build-vs-buy:bvb-ping, ...") |
+| `claude -p "/plugin:skill args"` with `--plugin-dir` | works: `claude -p "/build-vs-buy:ping a b" --plugin-dir <scratch>/plugin` runs the skill headless |
+| `--allowedTools` form that worked headless (the Read/Grep/Glob/Web/Bash additions the plan uses are untested here; note for Task 9) | `--allowedTools Skill Agent` (space-separated, no permission denials) |
+| `claude plugin validate` invocation | `claude plugin validate --strict .` from the repo root, exit 0 ("Validation passed") |
+
+Notes: `--output-format json` `result` holds only the final message, so the `ROOT=`/`ARGS=` lines are visible only with `--output-format stream-json --verbose`. The slash command expands the skill inline, so the `model:` pin applies to the main turn.
+
+Decisions from these results (owner, 2026-11-26): subagents are dispatched by their namespaced names, `build-vs-buy:bvb-scorer` and `build-vs-buy:bvb-researcher`. Because the command shadows the skill, `commands/build-vs-buy.md` is deleted and the skill is the entry point, with a real run to confirm it starts (plan Task 6).

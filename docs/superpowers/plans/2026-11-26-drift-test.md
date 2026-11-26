@@ -16,6 +16,7 @@ Spec: `docs/superpowers/specs/2026-11-26-drift-test-design.md`. Issues: #30, #31
 - `skills/build-vs-buy/matrix.md` is not edited (stays v1.3). Calibration is milestone 0.3.0 (#40).
 - Analysis only: no agent or skill text may recommend, rank for the owner, or decide.
 - `bvb-scorer` is read-only: `tools: Read, Grep, Glob`, exactly.
+- Task 2 results (owner decisions, 2026-11-26): subagent dispatch names are namespaced, `build-vs-buy:bvb-scorer` and `build-vs-buy:bvb-researcher`; the bare names fail. The agent files keep `name: bvb-scorer` / `name: bvb-researcher` and their file names. Wherever skill text tells the model to dispatch one of these agents, write the namespaced name, and tests that assert on that text use the namespaced name (so an assertion like ``one `bvb-scorer` subagent per candidate`` becomes ``one `build-vs-buy:bvb-scorer` subagent per candidate``). A same-named command shadows a skill, so the skill becomes the entry point and `commands/build-vs-buy.md` is deleted (Task 6, owner-approved), with a real run to confirm the skill starts.
 - Pinned default models: researcher `sonnet` (agent file), scorer `sonnet` (agent file), orchestrator `sonnet` (skill `model:`, if Task 2 verifies the pin). A per-call model always wins over a pinned one.
 - Research is always fresh in the production flow. The standalone scorer taking saved reports is for tests and re-scoring only.
 - The harness spends tokens: never run it in CI, never use `--dangerously-skip-permissions`, always unset `CLAUDE_CODE_SUBAGENT_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, always cap each call with `--max-budget-usd`.
@@ -46,7 +47,7 @@ Before PR A starts: PR #39 (this spec and plan) is merged.
 - `skills/build-vs-buy/templates/locked-context.md`: new, the locked-context file format (Task 4).
 - `agents/bvb-scorer.md`: new read-only scorer (Task 3).
 - `skills/scorer/SKILL.md`, `skills/researcher/SKILL.md`: new stage skills (Task 5).
-- `commands/build-vs-buy.md`: removed if Task 2 shows the skill shadows it (Task 6).
+- `commands/build-vs-buy.md`: removed (Task 2 showed the command shadows the skill; owner chose the skill as entry point, Task 6).
 - `tools/drift/analyze.py`: deterministic analyzer (Task 7). `tools/drift/run.sh`: harness (Task 9). `tools/drift/fixtures/`: frozen inputs (Task 8). The harness lives in `tools/`, not `evals/`, so `claude plugin eval` never mistakes it for an eval case.
 - `tests/test_skill.py` (modified), `tests/test_scorer_agent.py`, `tests/test_stage_skills.py`, `tests/test_plugin_validate.py`, `tests/test_drift_analyze.py`, `tests/test_drift_fixture.py`, `tests/test_drift_run.py`: new or modified tests.
 - `docs/drift/`: the baseline report (Task 10).
@@ -272,10 +273,10 @@ Replace each `<...>` with the observed value. Do not leave a cell unfilled.
 
 - [ ] **Step 6: Apply the decisions**
 
-- If "skill wins" is NOT the result, stop and report to the owner before Task 6.
+- Resolved: the recorded result is "command wins" (see Verification results). The owner approved deleting the command and making the skill the entry point (Task 6).
 - If substitution is "no", skip Step 2 of Task 6.
 - If the `model:` pin did not apply, drop the pin in Task 6 (see the note there).
-- If the per-call model did not beat the pin, or the dispatch name differs from `bvb-scorer` and `bvb-researcher`, stop and report: Tasks 3, 4, 5 and 9 depend on it.
+- If the per-call model did not beat the pin, stop and report: Tasks 3, 4, 5 and 9 depend on it. Resolved for the dispatch name: it differs, and the owner adopted the namespaced names `build-vs-buy:bvb-scorer` and `build-vs-buy:bvb-researcher` (see Global Constraints).
 - If the working `--allowedTools` flags differ from `Skill Agent Read Grep Glob` (scorer mode) or the context-mode set in `tools/drift/run.sh`, note the difference for Task 9.
 
 - [ ] **Step 7: Commit, push, open PR B**
@@ -522,7 +523,7 @@ edit('''                    "../../agents/bvb-researcher.md"):''',
 anchor = "    def test_score_input_schema_keys_documented(self):\n"
 new_test = '''    def test_scoring_is_delegated_to_independent_scorers(self):
         for phrase in ("You do not score.",
-                       "one `bvb-scorer` subagent per candidate",
+                       "one `build-vs-buy:bvb-scorer` subagent per candidate",
                        "Do not pass other candidates' reports",
                        "independently of the others",
                        "score-input.json",
@@ -605,7 +606,7 @@ start = text.index("## Step 2: Research")
 end = text.index("## Checkpoint 2")
 new_steps = '''## Step 2: Research
 
-Dispatch one `bvb-researcher` subagent per candidate (except build), all in parallel in one message, with `model: sonnet`. Always dispatch fresh researchers, even if earlier reports for the same topic exist in `docs/analysis/`. Each prompt must contain: candidate name and type, the locked must-haves, environment, stage, growth, the stack summary, and today's date. Do not give them scoring instructions.
+Dispatch one `build-vs-buy:bvb-researcher` subagent per candidate (except build), all in parallel in one message, with `model: sonnet`. Always dispatch fresh researchers, even if earlier reports for the same topic exist in `docs/analysis/`. Each prompt must contain: candidate name and type, the locked must-haves, environment, stage, growth, the stack summary, and today's date. Do not give them scoring instructions.
 
 Choose a scratch directory: the scratchpad directory if one is announced, otherwise a `mktemp -d` directory (never the repo). Save each researcher's reply, unchanged, to `<scratch>/reports/<candidate-slug>.md`.
 
@@ -613,7 +614,7 @@ For the **build** option, write the report yourself at `<scratch>/reports/build.
 
 ## Step 3: Score
 
-You do not score. Dispatch one `bvb-scorer` subagent per candidate, build included, all in parallel in one message. Do not pass a `model`, so the agent's pinned default applies. Each prompt names exactly three paths: the run's `locked-context.md`, `matrix.md`, and that candidate's report. Do not pass other candidates' reports: each candidate is scored independently of the others.
+You do not score. Dispatch one `build-vs-buy:bvb-scorer` subagent per candidate, build included, all in parallel in one message. Do not pass a `model`, so the agent's pinned default applies. Each prompt names exactly three paths: the run's `locked-context.md`, `matrix.md`, and that candidate's report. Do not pass other candidates' reports: each candidate is scored independently of the others.
 
 Each scorer replies with one json block holding an `options` list with one entry. Merge the entries into one `options` list, add `mode` and `environment` from `locked-context.md`, and save the result as `<scratch>/score-input.json` (never in the repo). Each factor also carries `why`, `evidence` and `status` from the scorer; `score.py` ignores them and Step 4 uses them. The merged input has this shape:
 
@@ -685,7 +686,7 @@ Expected: all pass. In particular `test_json_example_is_valid_score_input` still
 git add skills/build-vs-buy/SKILL.md skills/build-vs-buy/templates/locked-context.md tests/test_skill.py .claude-plugin/plugin.json
 git commit -m "feat(skill): score each candidate with an independent scorer
 
-Step 3 now dispatches one bvb-scorer per candidate and merges the entries
+Step 3 now dispatches one build-vs-buy:bvb-scorer per candidate and merges the entries
 into the score.py input. Checkpoint 1 writes locked-context.md into the
 run directory. Version 0.2.0-dev.2.
 
@@ -749,7 +750,7 @@ class StageSkills(unittest.TestCase):
     def test_each_dispatches_its_agent_and_prints_the_reply_verbatim(self):
         for name, agent in (("scorer", "bvb-scorer"), ("researcher", "bvb-researcher")):
             _, body = read(name)
-            self.assertIn(f"`{agent}` subagent", body, name)
+            self.assertIn(f"`build-vs-buy:{agent}` subagent", body, name)
             self.assertIn("do not pass a model, so the agent's pinned default applies", body, name)
             self.assertIn("exactly as returned", body, name)
             self.assertIn("Do not edit, summarize, score or comment.", body, name)
@@ -797,7 +798,7 @@ Run only the scoring stage. Arguments: $ARGUMENTS
 
 1. The first argument is the locked-context file. The other arguments are report files, except `--model <alias>`, which may appear anywhere and is not a report.
 2. The matrix is `<skill base dir>/../build-vs-buy/matrix.md`.
-3. Dispatch exactly one `bvb-scorer` subagent. Its prompt names three things: the locked-context file, the matrix, and every report file. If `--model <alias>` was given, dispatch it with that `model`. Otherwise do not pass a model, so the agent's pinned default applies.
+3. Dispatch exactly one `build-vs-buy:bvb-scorer` subagent. Its prompt names three things: the locked-context file, the matrix, and every report file. If `--model <alias>` was given, dispatch it with that `model`. Otherwise do not pass a model, so the agent's pinned default applies.
 4. Print the subagent's reply exactly as returned, with nothing before or after it. Do not edit, summarize, score or comment.
 ````
 
@@ -816,11 +817,11 @@ disable-model-invocation: true
 Run only the research stage for one candidate. Arguments: $ARGUMENTS
 
 1. The first argument is the locked-context file. Everything after it, except `--model <alias>`, is the candidate name and type, for example `Amazon SES (hosted)`.
-2. Dispatch exactly one `bvb-researcher` subagent. Its prompt gives the candidate name and type and the path of the locked-context file, and tells it to read that file for the must-haves, environment, stage, growth and stack summary, and to use the file's `date:` value as today's date. If `--model <alias>` was given, dispatch it with that `model`. Otherwise do not pass a model, so the agent's pinned default applies.
+2. Dispatch exactly one `build-vs-buy:bvb-researcher` subagent. Its prompt gives the candidate name and type and the path of the locked-context file, and tells it to read that file for the must-haves, environment, stage, growth and stack summary, and to use the file's `date:` value as today's date. If `--model <alias>` was given, dispatch it with that `model`. Otherwise do not pass a model, so the agent's pinned default applies.
 3. Print the subagent's reply exactly as returned, with nothing before or after it. Do not edit, summarize, score or comment.
 ````
 
-If Task 2 found that the working dispatch name is `build-vs-buy:bvb-scorer` (or `build-vs-buy:bvb-researcher`), use that name in these skills and in `skills/build-vs-buy/SKILL.md`, and adjust the `` `bvb-scorer` subagent `` strings in `tests/test_stage_skills.py` accordingly.
+The namespaced dispatch names above are final (Task 2 result, see Global Constraints); the agent file names and `name:` fields stay bare.
 
 - [ ] **Step 4: Document the stage commands in the README**
 
@@ -886,14 +887,14 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: the Task 2 results. Branches below follow them.
 
-- [ ] **Step 1: Entry point (only if Task 2 recorded "skill wins")**
+- [ ] **Step 1: Entry point (owner-approved: delete the shadowing command, skill is the entry point)**
 
 Fold the command's `argument-hint` into the skill, pin the orchestrator model, delete the shadowed command, and replace its test. If Task 2 recorded that the `model:` pin does not apply to a skill, delete the `model: sonnet` insertion in the script and the `assertIn("model: sonnet", head)` line before running it.
 
 ````python
 import pathlib
 
-# Branch (a): T2 showed the skill wins over a same-named command.
+# T2 showed the command shadows the skill; the owner chose to delete the command and make the skill the entry point.
 skill = pathlib.Path("skills/build-vs-buy/SKILL.md")
 text = skill.read_text(encoding="utf-8")
 marker = "\n---\n\n# Build vs buy analysis"
@@ -1015,6 +1016,8 @@ gh pr create --title "feat(skills): stage skills, entry-point cleanup, strict va
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
+
+Manual verification must include running the skill as the entry point with the command gone (`claude -p "/build-vs-buy:build-vs-buy test topic" --plugin-dir <scratch copy> --max-turns 2 --max-budget-usd 0.50`, with `CLAUDE_CODE_SUBAGENT_MODEL` unset): pass means the JSON `result` is not an unknown-command or unknown-skill error and is not `COMMAND-RAN`; the skill asking the owner a question counts as started (use `--output-format json` and `--allowedTools Skill Agent`; raise `--max-turns` to 4 if it runs out of turns before replying). If it does not start, stop and report to the owner.
 
 Run `/code-review`, do the manual verification (run `/build-vs-buy:scorer` once on a fixture-shaped input, and `/build-vs-buy` on a topic), report it, and stop for the owner.
 
