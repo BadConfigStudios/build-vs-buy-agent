@@ -217,5 +217,96 @@ class Cli(unittest.TestCase):
         self.assertEqual(proc.returncode, 2)
 
 
+class Hardening(unittest.TestCase):
+    def tmp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        return pathlib.Path(d.name)
+
+    def cli(self, *args):
+        return subprocess.run([sys.executable, str(ROOT / "tools" / "drift" / "analyze.py"), *args],
+                              capture_output=True, text=True)
+
+    def locked(self, root):
+        p = root / "locked.md"
+        p.write_text(LOCKED, encoding="utf-8")
+        return str(p)
+
+    def test_bad_set_dirs_exit_2_in_both_modes(self):
+        root = self.tmp()
+        (root / "empty").mkdir()
+        for mode in ("scores", "context"):
+            pre = ["--locked", self.locked(root)] if mode == "scores" else []
+            for target in (root / "missing", root / "empty"):
+                proc = self.cli(mode, *pre, str(target))
+                self.assertEqual(proc.returncode, 2, (mode, target))
+                self.assertIn(str(target), proc.stderr)
+                self.assertNotIn("runs:", proc.stdout)
+
+    def test_all_runs_failed_exits_2(self):
+        root = self.tmp()
+        write_run(root / "set", 1, {"a.out.json": "not json"})
+        proc = self.cli("scores", "--locked", self.locked(root), str(root / "set"))
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("no run could be scored", proc.stderr)
+
+    def test_partial_independent_run_is_unscored(self):
+        root = self.tmp()
+        write_run(root, 1, {"a.out.json": out_json([entry("Alpha"), entry("Beta")])})
+        write_run(root, 2, {"a.out.json": out_json([entry("Alpha")]), "b.out.json": "garbage"})
+        runs = [analyze.load_run(d) for d in analyze.run_dirs(root)]
+        s = analyze.summarize(runs, "full", "production")
+        self.assertEqual((s["runs_total"], s["runs_scored"]), (2, 1))
+        self.assertEqual(s["totals"]["Alpha"].__len__(), 1)
+        self.assertTrue(any(e.startswith("run-2: b.out.json") for e in s["errors"]))
+        self.assertIn("runs scored 1/2", analyze.render("x", s))
+
+    def test_run_names_and_numeric_order(self):
+        root = self.tmp()
+        for i in (10, 2, 1):
+            write_run(root, i, {"a.out.json": out_json([entry("Alpha")]) if i != 10 else "bad"})
+        dirs = analyze.run_dirs(root)
+        self.assertEqual([d.name for d in dirs], ["run-1", "run-2", "run-10"])
+        runs = [analyze.load_run(d) for d in dirs]
+        self.assertEqual(runs[2]["name"], "run-10")
+        s = analyze.summarize(runs, "full", "production")
+        self.assertTrue(any(e.startswith("run-10:") for e in s["errors"]))
+
+    def test_label_collisions_use_full_paths(self):
+        root = self.tmp()
+        a, b = root / "x" / "set", root / "y" / "set"
+        a.mkdir(parents=True)
+        b.mkdir(parents=True)
+        labels = analyze.set_labels([str(a), str(b)])
+        self.assertEqual(labels, [str(a.resolve()), str(b.resolve())])
+        self.assertEqual(analyze.set_labels([str(a)]), ["set"])
+        self.assertNotEqual(analyze.set_labels(["/"])[0], "")
+
+    def test_deeply_nested_json_is_an_error_not_a_crash(self):
+        root = self.tmp()
+        deep = "[" * 100000 + "]" * 100000
+        write_run(root, 1, {"a.out.json": deep})
+        write_run(root, 2, {"a.out.json": json.dumps({"result": "```json\n" + deep + "\n```"})})
+        for i in (1, 2):
+            run = analyze.load_run(root / f"run-{i}")
+            self.assertEqual(run["options"], [])
+            self.assertEqual(len(run["errors"]), 1)
+
+    def test_non_finite_cost_is_an_error(self):
+        root = self.tmp()
+        reply = "```json\n" + json.dumps({"options": [entry("Alpha")]}) + "\n```"
+        write_run(root, 1, {"a.out.json": '{"result": %s, "total_cost_usd": NaN}' % json.dumps(reply)})
+        run = analyze.load_run(root / "run-1")
+        self.assertEqual(run["cost"], 0.0)
+        self.assertEqual(len(run["errors"]), 1)
+        self.assertIn("finite", run["errors"][0])
+
+    def test_last_fence_with_options_wins(self):
+        good = json.dumps({"options": [entry("Real")]})
+        example = json.dumps({"options": [entry("Example")]})
+        reply = f"e.g.\n```json\n{example}\n```\nfinal\n```json\n{good}\n```\nnote\n```json\n{{\"x\": 1}}\n```"
+        self.assertEqual(analyze.extract_options(reply)[0]["name"], "Real")
+
+
 if __name__ == "__main__":
     unittest.main()

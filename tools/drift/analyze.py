@@ -13,6 +13,7 @@ locked-context.md.
 import collections
 import itertools
 import json
+import math
 import pathlib
 import re
 import sys
@@ -46,10 +47,23 @@ def parse_locked_context(text):
 
 
 def extract_options(result_text):
-    match = FENCE.search(result_text or "")
-    if not match:
+    matches = list(FENCE.finditer(result_text or ""))
+    if not matches:
         raise ValueError("no json block in the scorer reply")
-    data = json.loads(match.group(1))
+    data = None
+    for match in reversed(matches):
+        try:
+            candidate = json.loads(match.group(1))
+        except (ValueError, RecursionError):
+            continue
+        if isinstance(candidate, dict) and "options" in candidate:
+            data = candidate
+            break
+    if data is None:
+        try:
+            data = json.loads(matches[0].group(1))
+        except RecursionError as exc:
+            raise ValueError("json block is nested too deeply") from exc
     options = data.get("options") if isinstance(data, dict) else None
     if not isinstance(options, list) or not options:
         raise ValueError("scorer reply has no options list")
@@ -66,11 +80,16 @@ def load_run(run_dir):
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("output is not a JSON object")
-            cost += float(payload.get("total_cost_usd") or 0)
+            file_cost = float(payload.get("total_cost_usd") or 0)
+            if math.isfinite(file_cost):
+                cost += file_cost
+            else:
+                errors.append(f"{path.name}: total_cost_usd is not a finite number")
             options.extend(extract_options(payload.get("result", "")))
-        except (ValueError, TypeError, OSError) as exc:
+        except (ValueError, TypeError, OSError, RecursionError) as exc:
             errors.append(f"{path.name}: {exc}")
-    return {"options": options, "cost": cost, "errors": errors}
+    return {"name": pathlib.Path(run_dir).name, "options": options, "cost": cost,
+            "errors": errors}
 
 
 def _pairwise_agreement(rankings):
@@ -86,14 +105,15 @@ def _pairwise_agreement(rankings):
 def summarize(runs, mode, environment):
     errors, scored = [], []
     for i, run in enumerate(runs, 1):
-        errors += [f"run-{i}: {e}" for e in run["errors"]]
-        if not run["options"]:
+        label = run.get("name", f"run-{i}")
+        errors += [f"{label}: {e}" for e in run["errors"]]
+        if run["errors"] or not run["options"]:
             continue
         try:
             scored.append(score.evaluate({"mode": mode, "environment": environment,
                                           "options": run["options"]}))
         except ValueError as exc:
-            errors.append(f"run-{i}: score.py rejected the scorer output: {exc}")
+            errors.append(f"{label}: score.py rejected the scorer output: {exc}")
     names = sorted({o["name"] for r in scored for o in r["options"]})
     factors, totals, gates = {}, {}, {}
     for name in names:
@@ -143,7 +163,8 @@ def mean_total_range(summary):
 def render(label, summary):
     n, s = summary["runs_total"], summary["runs_scored"]
     lines = [f"## {label}", "",
-             f"- runs: {n}, scored: {s}, cost: ${summary['cost_total']:.3f}"]
+             f"- runs: {n}, scored: {s}, cost: ${summary['cost_total']:.3f}",
+             f"- runs scored {s}/{n}"]
     if s:
         pair = summary["pairwise_agreement"]
         lines += [
@@ -186,7 +207,25 @@ def render_comparison(summaries):
 
 
 def run_dirs(set_dir):
-    return sorted(p for p in pathlib.Path(set_dir).glob("run-*") if p.is_dir())
+    def key(p):
+        m = re.search(r"(\d+)$", p.name)
+        return (0, int(m.group(1)), p.name) if m else (1, 0, p.name)
+    return sorted((p for p in pathlib.Path(set_dir).glob("run-*") if p.is_dir()), key=key)
+
+
+def set_labels(set_dirs):
+    names = [pathlib.Path(d).resolve().name for d in set_dirs]
+    return [str(pathlib.Path(d).resolve()) if not n or names.count(n) > 1 else n
+            for d, n in zip(set_dirs, names)]
+
+
+def check_set_dirs(set_dirs):
+    for d in set_dirs:
+        if not pathlib.Path(d).is_dir():
+            return f"analyze.py: {d} is not a directory"
+        if not run_dirs(d):
+            return f"analyze.py: {d} contains no run-* directories"
+    return None
 
 
 def summarize_context(set_dir):
@@ -234,7 +273,11 @@ def main(argv):
         print(__doc__, file=sys.stderr)
         return 2
     if argv[1] == "context":
-        summaries = {pathlib.Path(d).name: summarize_context(d) for d in argv[2:]}
+        problem = check_set_dirs(argv[2:])
+        if problem:
+            print(problem, file=sys.stderr)
+            return 2
+        summaries = dict(zip(set_labels(argv[2:]), map(summarize_context, argv[2:])))
         sys.stdout.write(render_context(summaries))
         return 0
     if len(argv) < 5 or argv[2] != "--locked":
@@ -247,14 +290,22 @@ def main(argv):
         print(f"analyze.py: cannot read mode and environment from the locked-context file: {exc}",
               file=sys.stderr)
         return 2
+    problem = check_set_dirs(argv[4:])
+    if problem:
+        print(problem, file=sys.stderr)
+        return 2
     summaries = {}
-    for set_dir in argv[4:]:
+    for label, set_dir in zip(set_labels(argv[4:]), argv[4:]):
         runs = [load_run(d) for d in run_dirs(set_dir)]
-        summaries[pathlib.Path(set_dir).name] = summarize(runs, mode, environment)
+        summaries[label] = summarize(runs, mode, environment)
     for label, s in summaries.items():
         sys.stdout.write(render(label, s) + "\n")
     if len(summaries) > 1:
         sys.stdout.write(render_comparison(summaries))
+    failed = [l for l, s in summaries.items() if s["runs_scored"] == 0]
+    if failed:
+        print("analyze.py: no run could be scored in: " + ", ".join(failed), file=sys.stderr)
+        return 2
     return 0
 
 
