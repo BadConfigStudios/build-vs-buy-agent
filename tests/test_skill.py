@@ -31,6 +31,14 @@ class SkillFile(unittest.TestCase):
                        "analysis only", "bvb-<slug>-YYYYMMDD"):
             self.assertIn(phrase, self.text, phrase)
 
+    def test_research_is_always_fresh(self):
+        for phrase in ("Research is always fresh.",
+                       "Never reuse research or evidence from an earlier run",
+                       "never offer to reuse it",
+                       "Always dispatch fresh researchers, even if earlier reports",
+                       "Skip `docs/analysis/bvb-*` directories"):
+            self.assertIn(phrase, self.text, phrase)
+
     def test_score_input_schema_keys_documented(self):
         for key in ("must_haves_met", "prerelease", "modifiers", "delta", "environment"):
             self.assertIn(key, self.text, key)

@@ -1,6 +1,6 @@
 {
   "name": "build-vs-buy",
-  "version": "0.1.0",
+  "version": "0.2.0-dev.1",
   "description": "Research build-vs-buy candidates, score them with a transparent matrix, and write the analysis as markdown plus a single-file HTML view.",
   "author": { "name": "BadConfigStudios" },
   "repository": "https://github.com/BadConfigStudios/build-vs-buy-agent",
