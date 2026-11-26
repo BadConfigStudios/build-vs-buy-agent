@@ -36,6 +36,14 @@ class StageSkills(unittest.TestCase):
         self.assertIn("build-vs-buy/matrix.md", body)
         self.assertTrue((SKILLS / "build-vs-buy" / "matrix.md").is_file())
 
+    def test_paths_use_the_plugin_root_variable(self):
+        main = (SKILLS / "build-vs-buy" / "SKILL.md").read_text(encoding="utf-8")
+        _, scorer = read("scorer")
+        for text in (main, scorer):
+            self.assertNotIn("<skill base dir>", text)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/score.py", main)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/skills/build-vs-buy/matrix.md", scorer)
+
     def test_researcher_takes_the_retrieval_date_from_the_locked_context(self):
         _, body = read("researcher")
         self.assertIn("use the file's `date:` value as today's date", body)
