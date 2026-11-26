@@ -47,7 +47,7 @@ class DriftFixture(unittest.TestCase):
     def test_arm_inputs_exist(self):
         self.assertTrue((FIX / "sandbox-with-docs" / "README.md").is_file())
         prompt = (FIX / "context-prompt.md").read_text(encoding="utf-8")
-        for phrase in ("/build-vs-buy email notifier", "locked-context.md", "Do not start research."):
+        for phrase in ("/build-vs-buy:build-vs-buy email notifier", "locked-context.md", "Do not start research."):
             self.assertIn(phrase, prompt, phrase)
 
 

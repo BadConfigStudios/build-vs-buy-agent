@@ -1,4 +1,4 @@
-/build-vs-buy email notifier
+/build-vs-buy:build-vs-buy email notifier
 
 Answers for the interview. Give each answer when you ask the matching question:
 
@@ -11,4 +11,4 @@ If you cannot find a document that describes the stack, use this text as the sta
 
 Python 3.12 API (FastAPI) and a React front end, one repo. Postgres 16 (managed, single instance), no Redis, no message broker. Containers on a single small Kubernetes cluster, config as YAML in the repo. Secrets live in the cloud provider's secret manager, nothing in the repo. One engineer, part time. Guardrails: prefer managed over self-hosted; no new stateful component without a backup story; a new vendor needs a free tier or under 50 USD a month at current volume; no tool may hold production secrets outside the secret manager.
 
-When you show Checkpoint 1, I confirm it exactly as shown. After you have written locked-context.md into the run directory, stop. Do not start research.
+I confirm Checkpoint 1 in advance, exactly as you would show it. Do not wait for another message: write locked-context.md into the run directory right after you show Checkpoint 1, then stop. Do not start research.

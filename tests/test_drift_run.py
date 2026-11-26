@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import re
 import shutil
 import stat
 import subprocess
@@ -17,13 +18,17 @@ FAKE_CLAUDE = """#!/usr/bin/env bash
   for a in "$@"; do printf ' [%s]' "$a"; done
   printf '\\nENV_SUBAGENT_MODEL=%s FORCE=%s PWD=%s\\n' "${CLAUDE_CODE_SUBAGENT_MODEL-unset}" \\
     "${CLAUDE_CODE_SUBAGENT_MODEL_FORCE-unset}" "$PWD"
+  printf 'ENV_ANTHROPIC=%s/%s/%s/%s\\n' "${ANTHROPIC_MODEL-unset}" "${ANTHROPIC_DEFAULT_SONNET_MODEL-unset}" \\
+    "${ANTHROPIC_DEFAULT_OPUS_MODEL-unset}" "${ANTHROPIC_DEFAULT_HAIKU_MODEL-unset}"
   if [ -f README.md ]; then echo README=yes; else echo README=no; fi
 } >> "$FAKE_LOG"
 if [ -n "${FAKE_FAIL-}" ]; then echo partial; exit 1; fi
 case "$*" in
   *"/build-vs-buy:scorer"*) echo '{"result": "ok", "total_cost_usd": 0.01}' ;;
   *)
+    [ -n "${FAKE_NOWRITE-}" ] && { echo '{"result": "ok"}'; exit 0; }
     mkdir -p docs/analysis/bvb-x-20261126
+    [ -n "${FAKE_TWO-}" ] && { mkdir -p docs/analysis/other; : > docs/analysis/other/locked-context.md; }
     printf -- '---\\nmode: full\\n---\\n' > docs/analysis/bvb-x-20261126/locked-context.md
     echo '{"result": "ok", "total_cost_usd": 0.02}' ;;
 esac
@@ -51,6 +56,8 @@ class RunSh(unittest.TestCase):
         self.tmpdir.mkdir()
         self.env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{tools}{os.pathsep}{system}",
                         TMPDIR=str(self.tmpdir), FAKE_LOG=str(self.log),
+                        ANTHROPIC_MODEL="m", ANTHROPIC_DEFAULT_SONNET_MODEL="m",
+                        ANTHROPIC_DEFAULT_OPUS_MODEL="m", ANTHROPIC_DEFAULT_HAIKU_MODEL="m",
                         CLAUDE_CODE_SUBAGENT_MODEL="haiku", CLAUDE_CODE_SUBAGENT_MODEL_FORCE="1")
         self.out = self.dir / "out"
 
@@ -115,6 +122,50 @@ class RunSh(unittest.TestCase):
                      out + ["--model", "x y"], out + ["--runs"], out + ["--tag"]):
             proc = subprocess.run(["bash", str(RUN_SH), *args], capture_output=True, text=True, env=self.env)
             self.assertEqual(proc.returncode, 2, args)
+        self.assertFalse(self.log.exists())
+
+    def test_model_env_overrides_are_unset(self):
+        self.run_sh("--runs", "1", "--topology", "centralized")
+        self.assertIn("ENV_ANTHROPIC=unset/unset/unset/unset", self.calls())
+
+    def test_scorer_runs_from_repo_root(self):
+        self.run_sh("--runs", "1", "--topology", "centralized")
+        pwds = [l.split("PWD=")[1] for l in self.calls() if "PWD=" in l]
+        self.assertEqual([os.path.realpath(p) for p in pwds], [os.path.realpath(ROOT)])
+
+    def test_context_write_is_scoped_to_the_sandbox(self):
+        self.run_sh("--mode", "context", "--runs", "1")
+        text = self.log.read_text(encoding="utf-8")
+        m = re.search(r"\[(Write\(//[^\]]*/\*\*\))\]", text)
+        self.assertIsNotNone(m, text)
+        pwd = re.search(r"PWD=(\S+)", text).group(1)
+        self.assertIn(f"Write(/{pwd}/**)", text)
+        self.assertNotIn("[Write]", text)
+
+    def test_missing_or_duplicate_locked_context_fails_the_run(self):
+        for var in ("FAKE_NOWRITE", "FAKE_TWO"):
+            env = dict(self.env, **{var: "1"})
+            proc = subprocess.run(["bash", str(RUN_SH), "--out", str(self.dir / var), "--mode", "context",
+                                   "--runs", "2"], capture_output=True, text=True, env=env)
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertIn("(missing)" if var == "FAKE_NOWRITE" else "(more than one)", proc.stderr)
+
+    def test_refuses_nonempty_output_dir(self):
+        self.assertEqual(self.run_sh("--runs", "1").returncode, 0)
+        n = len(self.calls())
+        proc = self.run_sh("--runs", "1")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("not empty", proc.stderr)
+        self.assertEqual(len(self.calls()), n)
+
+    def test_refuses_repo_path_with_whitespace(self):
+        spaced = self.dir / "a b"
+        (spaced / "tools" / "drift").mkdir(parents=True)
+        shutil.copy(RUN_SH, spaced / "tools" / "drift" / "run.sh")
+        proc = subprocess.run(["bash", str(spaced / "tools" / "drift" / "run.sh"), "--out", str(self.out)],
+                              capture_output=True, text=True, env=self.env)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("whitespace", proc.stderr)
         self.assertFalse(self.log.exists())
 
     def test_bounds_accepted_at_the_edges(self):

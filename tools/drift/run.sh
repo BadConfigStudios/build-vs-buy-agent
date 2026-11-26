@@ -7,9 +7,9 @@
 #
 # Output: OUT/TAG/run-K/... ; read it with analyze.py.
 #
-# Scope note: context-mode calls run with cwd = a throwaway sandbox, but the Read/Write
-# entries in --allowedTools are NOT path-scoped. They are bounded only by the cwd,
-# --setting-sources project, --max-budget-usd and the explicit tool list.
+# Scope note: context-mode calls run with cwd = a throwaway sandbox and Write is path-scoped
+# to it (Write(//SANDBOX/**)). Read is NOT path-scoped (the skill must read the plugin's
+# matrix and templates). Scorer-mode calls run with cwd = the repo root.
 set -euo pipefail
 
 usage() {
@@ -26,7 +26,7 @@ Usage: run.sh --out DIR [--mode scorer|context] [--runs N] [--model ALIAS]
   --budget    --max-budget-usd cap for each claude call, 0 < USD <= 5.00 (default 1.50).
               A single call costs about 0.07-0.10 USD baseline before any work.
   --tag       output subdirectory name, [A-Za-z0-9._-]+ (default derived from the options)
-Read/Write tool permissions are not path-scoped beyond the working directory.
+Only Write is path-scoped (to the context sandbox); Read is not path-scoped.
 Exit codes: 0 ok, 1 one or more claude calls failed, 2 bad usage.
 EOF
   exit 2
@@ -62,13 +62,15 @@ RUNS=$((10#$RUNS))
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
+case "$ROOT" in *[[:space:]]*) die "the repo path must not contain whitespace: $ROOT" ;; esac
 FIXTURE="$HERE/fixtures"
 
 REPORTS=("$FIXTURE"/reports/*.md)
 [ -f "${REPORTS[0]}" ] || { echo "run.sh: no reports found in $FIXTURE/reports" >&2; exit 2; }
 
 # A leftover override would silently change which model runs, so remove both.
-unset CLAUDE_CODE_SUBAGENT_MODEL CLAUDE_CODE_SUBAGENT_MODEL_FORCE
+unset CLAUDE_CODE_SUBAGENT_MODEL CLAUDE_CODE_SUBAGENT_MODEL_FORCE ANTHROPIC_MODEL \
+  ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
 
 if [ -z "$TAG" ]; then
   if [ "$MODE" = scorer ]; then TAG="scorer-$TOPOLOGY-${MODEL:-default}"; else TAG="context-$ARM"; fi
@@ -77,6 +79,9 @@ fi
 if [ "$MODE" = scorer ] && [ "$TOPOLOGY" = independent ]; then CALLS=${#REPORTS[@]}; else CALLS=1; fi
 awk -v r="$RUNS" -v c="$CALLS" -v b="$BUDGET" 'BEGIN{printf "run.sh: up to %d calls, estimated max spend %.2f USD\n", r*c, r*c*b}' >&2
 
+if [ -d "$OUT/$TAG" ] && [ -n "$(ls -A "$OUT/$TAG")" ]; then
+  die "$OUT/$TAG already exists and is not empty; pick another --tag or --out"
+fi
 mkdir -p "$OUT/$TAG"
 
 SANDBOX=""
@@ -85,12 +90,12 @@ trap 'exit 130' INT TERM
 
 FAILS=()
 
-# call_to OUTFILE PROMPT TOOLS...  (cwd for claude: $CALL_DIR, default current)
+# call_to OUTFILE PROMPT TOOLS...  (cwd for claude: $CALL_DIR, default the repo root)
 # Output goes to OUTFILE.tmp and is renamed only on success, so a failed or
 # budget-capped call never leaves a file the analyzer would read as a result.
 call_to() {
   local outfile="$1" prompt="$2"; shift 2
-  if (cd "${CALL_DIR:-.}" && claude -p "$prompt" --plugin-dir "$ROOT" --output-format json \
+  if (cd "${CALL_DIR:-$ROOT}" && claude -p "$prompt" --plugin-dir "$ROOT" --output-format json \
         --setting-sources project --strict-mcp-config \
         --max-budget-usd "$BUDGET" --allowedTools "$@") > "$outfile.tmp"; then
     mv "$outfile.tmp" "$outfile"
@@ -129,16 +134,18 @@ else
     SANDBOX="$(mktemp -d)"
     if [ "$ARM" = with-docs ]; then cp "$FIXTURE/sandbox-with-docs/README.md" "$SANDBOX/README.md"; fi
     CALL_DIR="$SANDBOX" call_to "$dir/session.out.json" "$(cat "$FIXTURE/context-prompt.md")" \
-      Skill Agent Read Grep Glob Write "Bash(mkdir:*)" "Bash(date:*)"
+      Skill Agent Read Grep Glob "Write(/${SANDBOX}/**)" "Bash(mkdir:*)" "Bash(date:*)"
     found=()
     while IFS= read -r line; do [ -z "$line" ] || found+=("$line"); done < <(
       find "$SANDBOX/docs/analysis" -name locked-context.md 2>/dev/null || true)
     if [ "${#found[@]}" -gt 1 ]; then
-      echo "run.sh: run-$k: more than one locked-context.md in the sandbox" >&2; exit 2
+      echo "run.sh: run-$k: more than one locked-context.md in the sandbox" >&2
+      FAILS+=("$dir/locked-context.md (more than one)")
     elif [ "${#found[@]}" -eq 1 ]; then
       cp "${found[0]}" "$dir/locked-context.md"
     else
       echo "run.sh: run-$k: no locked-context.md written" >&2
+      FAILS+=("$dir/locked-context.md (missing)")
     fi
     rm -rf "$SANDBOX"; SANDBOX=""
   done
