@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -18,6 +19,7 @@ FAKE_CLAUDE = """#!/usr/bin/env bash
     "${CLAUDE_CODE_SUBAGENT_MODEL_FORCE-unset}" "$PWD"
   if [ -f README.md ]; then echo README=yes; else echo README=no; fi
 } >> "$FAKE_LOG"
+if [ -n "${FAKE_FAIL-}" ]; then echo partial; exit 1; fi
 case "$*" in
   *"/build-vs-buy:scorer"*) echo '{"result": "ok", "total_cost_usd": 0.01}' ;;
   *)
@@ -39,8 +41,16 @@ class RunSh(unittest.TestCase):
         fake.write_text(FAKE_CLAUDE, encoding="utf-8")
         fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
         self.log = self.dir / "calls.log"
-        self.env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-                        FAKE_LOG=str(self.log),
+        # PATH is only the fake dir, a dir with python3, and the system dirs: the real claude is unreachable.
+        tools = self.dir / "tools"
+        tools.mkdir()
+        (tools / "python3").symlink_to(shutil.which("python3"))
+        system = os.pathsep.join(["/usr/bin", "/bin"])
+        self.assertIsNone(shutil.which("claude", path=f"{tools}{os.pathsep}{system}"))
+        self.tmpdir = self.dir / "tmp"
+        self.tmpdir.mkdir()
+        self.env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{tools}{os.pathsep}{system}",
+                        TMPDIR=str(self.tmpdir), FAKE_LOG=str(self.log),
                         CLAUDE_CODE_SUBAGENT_MODEL="haiku", CLAUDE_CODE_SUBAGENT_MODEL_FORCE="1")
         self.out = self.dir / "out"
 
@@ -98,10 +108,63 @@ class RunSh(unittest.TestCase):
     def test_bad_usage_exits_2(self):
         out = ["--out", str(self.out)]
         for args in ([], out + ["--mode", "nope"], out + ["--runs", "x"], out + ["--topology", "diag"],
-                     out + ["--arm", "both"], out + ["--bogus"]):
+                     out + ["--arm", "both"], out + ["--bogus"],
+                     out + ["--runs", "0"], out + ["--runs", "31"], out + ["--runs", "-1"],
+                     out + ["--budget", "0"], out + ["--budget", "5.01"], out + ["--budget", "abc"],
+                     out + ["--budget", "-1"], out + ["--tag", ".."], out + ["--tag", "a/b"],
+                     out + ["--model", "x y"], out + ["--runs"], out + ["--tag"]):
             proc = subprocess.run(["bash", str(RUN_SH), *args], capture_output=True, text=True, env=self.env)
             self.assertEqual(proc.returncode, 2, args)
         self.assertFalse(self.log.exists())
+
+    def test_bounds_accepted_at_the_edges(self):
+        proc = self.run_sh("--runs", "1", "--budget", "5.00", "--topology", "centralized")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("estimated max spend 5.00 USD", proc.stderr)
+
+    def test_plugin_dir_and_isolation_flags_on_every_call(self):
+        for extra in ([], ["--topology", "centralized"], ["--mode", "context"]):
+            self.log.unlink(missing_ok=True)
+            self.run_sh("--runs", "1", *extra)
+            text = self.log.read_text(encoding="utf-8")
+            n = text.count("ARGS:")
+            self.assertGreater(n, 0)
+            # The context prompt is multi-line, so count flags over the whole log.
+            for needle in (f"[--plugin-dir] [{ROOT}]", "[--setting-sources] [project]", "[--strict-mcp-config]"):
+                self.assertEqual(text.count(needle), n, needle)
+
+    def test_centralized_shuffle_is_reproducible_and_matches_prompt(self):
+        orders = []
+        for name in ("a", "b"):
+            self.log.unlink(missing_ok=True)
+            out = self.dir / name
+            proc = subprocess.run(["bash", str(RUN_SH), "--out", str(out), "--runs", "2",
+                                   "--topology", "centralized"],
+                                  capture_output=True, text=True, env=self.env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            base = out / "scorer-centralized-default"
+            orders.append([(base / f"run-{k}" / "order.txt").read_text() for k in (1, 2)])
+            prompts = [l for l in self.calls() if l.startswith("ARGS:")]
+            for k, line in enumerate(prompts, start=1):
+                in_prompt = [t for t in line.split() if "/reports/" in t and t.rstrip("]").endswith(".md")]
+                in_prompt = [t.strip("[]") for t in in_prompt]
+                self.assertEqual(in_prompt, orders[-1][k - 1].split())
+        self.assertEqual(orders[0], orders[1])
+
+    def test_failing_claude_exits_1_and_leaves_no_result_files(self):
+        self.env["FAKE_FAIL"] = "1"
+        for extra in ([], ["--topology", "centralized"], ["--mode", "context"]):
+            proc = self.run_sh("--runs", "1", *extra)
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertIn("failed", proc.stderr)
+        self.assertEqual(list(self.out.rglob("*.out.json*")), [])
+
+    def test_sandbox_removed_after_run_and_on_failure(self):
+        self.run_sh("--mode", "context", "--runs", "2")
+        self.assertEqual(list(self.tmpdir.iterdir()), [])
+        self.env["FAKE_FAIL"] = "1"
+        self.run_sh("--mode", "context", "--runs", "1")
+        self.assertEqual(list(self.tmpdir.iterdir()), [])
 
 
 if __name__ == "__main__":
