@@ -142,6 +142,18 @@ class ScorerAgent(unittest.TestCase):
                     "dependencies": 4, "lock_in": 4, "security": 5}
         self.assertEqual({k: factors[k]["base"] for k in expected}, expected)
 
+    def test_prerelease_fallback_applies_the_maturity_modifier(self):
+        self.assertIn("apply the `maturity` modifier as for any unstable beta",
+                      self.line_starting("- `prerelease` "))
+
+    def test_maintenance_example_records_the_vendor_modifier(self):
+        mods = self.example()["options"][0]["factors"]["maintenance"]["modifiers"]
+        self.assertEqual(mods, [{"label": "ownership risk", "delta": 1}])
+
+    def test_softened_scaling_penalty_is_explained(self):
+        self.assertIn("If you soften the `scaling` -1 to zero, name the owner-controlled interface in `why`",
+                      self.body)
+
     def test_restricts_reads_to_prompt_files(self):
         self.assertIn("Read only the files named in the prompt", self.body)
 
