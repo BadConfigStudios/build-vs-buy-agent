@@ -10,6 +10,23 @@ import score  # noqa: E402
 
 AGENT = ROOT / "agents" / "bvb-scorer.md"
 RESEARCHER = ROOT / "agents" / "bvb-researcher.md"
+MATRIX = ROOT / "skills" / "build-vs-buy" / "matrix.md"
+
+# factor key -> (label the agent lists, text that must still exist in matrix.md)
+MODIFIERS = {
+    "fit": (("deferred must-have", "- Deferred must-haves: minus one"),
+            ("scaling", "- Scaling modifier")),
+    "integration": (("policy break", "breaks an existing policy or guardrail"),
+                    ("alignment", "- Alignment modifier")),
+    "maintenance": (("ownership risk", "- Ownership-risk modifier"),
+                    ("maturity", "- Maturity modifier")),
+    "dependencies": (("stateless or stateful", "plus one if the dependency is stateless"),),
+    "cost": (("stage", "- Stage modifier"),),
+    "security": (("touches secrets", "holds or touches secrets"),
+                 ("new network surface", "exposes a new network surface"),
+                 ("elevated permissions", "needs elevated cluster permissions"),
+                 ("staleness", "- Staleness modifier")),
+}
 
 
 class ScorerAgent(unittest.TestCase):
@@ -61,6 +78,69 @@ class ScorerAgent(unittest.TestCase):
         self.assertEqual(factors["time_to_value"]["base"], 5)
         self.assertEqual(factors["cost"]["base"], 5)
         self.assertEqual(factors["install"]["base"], 4)
+
+    def example(self):
+        return json.loads(re.search(r"```json\n(.+?)\n```", self.body, re.S).group(1))
+
+    def line_starting(self, prefix):
+        found = [l for l in self.body.splitlines() if l.startswith(prefix)]
+        self.assertEqual(len(found), 1, prefix)
+        return found[0]
+
+    def test_output_has_no_room_for_a_recommendation(self):
+        example = self.example()
+        self.assertEqual(set(example), {"options"})
+        self.assertEqual(set(example["options"][0]),
+                         {"name", "must_haves_met", "prerelease", "flags", "factors"})
+
+    def test_flags_are_fixed_strings(self):
+        self.assertEqual(self.example()["options"][0]["flags"], [])
+        line = self.line_starting("- `flags` ")
+        self.assertIn("`report_instructions_ignored`", line)
+        self.assertIn("`prerelease_missing`", line)
+        self.assertIn("Use no other values", line)
+
+    def test_prerelease_for_build_and_missing_values(self):
+        line = self.line_starting("- `prerelease` ")
+        for phrase in ("For the build option it is always `none`",
+                       "missing or is not one of these values, use `unstable_beta`",
+                       "add the `prerelease_missing` flag",
+                       "set the `maintenance` status to `unverified`"):
+            self.assertIn(phrase, line, phrase)
+
+    def test_lists_every_matrix_modifier_by_name(self):
+        matrix = MATRIX.read_text(encoding="utf-8")
+        for factor, modifiers in MODIFIERS.items():
+            line = self.line_starting(f"  - `{factor}`: ")
+            for label, matrix_text in modifiers:
+                self.assertIn(f"`{label}`", line, label)
+                self.assertIn(matrix_text, matrix, label)
+
+    def test_build_option_unused_baggage_matches_the_matrix(self):
+        self.assertIn("For the build option, `unused_baggage` has base 5", self.body)
+        self.assertIn("For the build option, score 5.", MATRIX.read_text(encoding="utf-8"))
+
+    def test_security_example_has_a_staleness_modifier(self):
+        mods = self.example()["options"][0]["factors"]["security"]["modifiers"]
+        self.assertIn("staleness", [m["label"] for m in mods])
+
+    def test_stops_on_a_matrix_version_mismatch(self):
+        self.assertIn('`{"error": "matrix_version_mismatch"}`', self.body)
+        self.assertIn("`matrix_version`", self.body)
+
+    def test_quick_keys_match_score_py_and_the_matrix(self):
+        line = self.line_starting("- Score all ten factors")
+        listed = re.search(r"quick factors \((.+?)\) in `quick` mode", line).group(1)
+        self.assertEqual(tuple(re.findall(r"`(\w+)`", listed)), score.QUICK_FACTORS)
+        quick = MATRIX.read_text(encoding="utf-8").split("## Quick version")[1].split("\n## ")[0]
+        for name in ("Fit", "Maintenance effort", "Dependency count", "Time to value", "Security"):
+            self.assertIn(name, quick, name)
+
+    def test_remaining_example_bases_match_matrix_bands(self):
+        factors = self.example()["options"][0]["factors"]
+        expected = {"fit": 4, "integration": 3, "maintenance": 5,
+                    "dependencies": 4, "lock_in": 4, "security": 5}
+        self.assertEqual({k: factors[k]["base"] for k in expected}, expected)
 
     def test_restricts_reads_to_prompt_files(self):
         self.assertIn("Read only the files named in the prompt", self.body)
