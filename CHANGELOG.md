@@ -5,9 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.1.0-rc.1] - 2026-11-25
+## [0.1.0] - 2026-11-25
 
-Feature freeze declared; only fixes merge until 0.1.0.
+First release. A feature freeze was declared at 0.1.0-rc.1; the manual dry-run found no defects, so no further release candidate was needed.
 
 ### Added
 - Plugin manifests and marketplace entry.
