@@ -99,7 +99,8 @@ class SkillFile(unittest.TestCase):
     def test_redispatch_never_echoes_scorer_output(self):
         step3 = self.section("## Step 3", "## Checkpoint 2")
         for phrase in ("the candidate name from the candidate list",
-                       "the factor key if the error names one",
+                       "every factor key the error names",
+                       "any of these field names that it names: `name`, `must_haves_met`, `prerelease`, `factors`, `base`, `modifiers`, `delta`",
                        "the fixed text `invalid entry`",
                        "Never pass the `score.py` message",
                        "the fixed text `reply was not one valid json block`"):
@@ -109,8 +110,24 @@ class SkillFile(unittest.TestCase):
 
     def test_step_4_uses_the_existing_directory(self):
         step4 = self.text.split("## Step 4: Write the analysis")[1]
-        self.assertIn("The run directory already exists", step4)
-        self.assertIn("Do not apply the suffix rule again", step4)
+        self.assertIn("Use the run directory you created after Checkpoint 1", step4)
+        self.assertNotIn("append `-2`", step4)
+
+    def test_run_directory_naming_lives_where_it_is_created(self):
+        checkpoint = self.section("## Checkpoint 1", "## Step 2")
+        for phrase in ("`docs/analysis/bvb-<slug>-YYYYMMDD/`",
+                       "If it exists, append `-2`, then `-3`, and so on; never reuse an existing directory"):
+            self.assertIn(phrase, checkpoint, phrase)
+        self.assertNotIn("naming in Step 4", self.text)
+
+    def test_build_report_identifies_itself(self):
+        self.assertIn("Section 1 must state that this is the build option",
+                      self.section("## Step 2", "## Step 3"))
+
+    def test_copies_come_before_dispatch(self):
+        step3 = self.section("## Step 3", "## Checkpoint 2")
+        self.assertLess(step3.index("make `<scratch>/score/<candidate-slug>/`"),
+                        step3.index("dispatch one `build-vs-buy:bvb-scorer`"))
 
     def test_colliding_slugs_get_suffixes(self):
         self.assertIn("If two candidates give the same slug, the later ones in candidate-list order get `-2`, `-3`",
