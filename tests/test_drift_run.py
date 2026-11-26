@@ -134,17 +134,14 @@ class RunSh(unittest.TestCase):
         pwds = [l.split("PWD=")[1] for l in self.calls() if "PWD=" in l]
         self.assertEqual([os.path.realpath(p) for p in pwds], [os.path.realpath(ROOT)])
 
-    def test_context_write_is_scoped_to_the_sandbox(self):
+    def test_context_write_is_plain_and_sandbox_is_physical(self):
         self.run_sh("--mode", "context", "--runs", "1")
         text = self.log.read_text(encoding="utf-8")
-        m = re.search(r"\[(Write\(//[^\]]*/\*\*\))\]", text)
-        self.assertIsNotNone(m, text)
+        self.assertIn("[Write]", text)
+        self.assertNotIn("Write(", text)
         pwd = re.search(r"PWD=(\S+)", text).group(1)
-        self.assertIn(f"Write(/{pwd}/**)", text)
         phys = re.search(r"PHYS=(\S+)", text).group(1)
         self.assertEqual(pwd, phys)
-        self.assertIn(f"Write(/{phys}/**)", text)
-        self.assertNotIn("[Write]", text)
 
     def test_missing_or_duplicate_locked_context_fails_the_run(self):
         for var in ("FAKE_NOWRITE", "FAKE_TWO"):

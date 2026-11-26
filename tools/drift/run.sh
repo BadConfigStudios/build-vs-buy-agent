@@ -7,9 +7,10 @@
 #
 # Output: OUT/TAG/run-K/... ; read it with analyze.py.
 #
-# Scope note: context-mode calls run with cwd = a throwaway sandbox and Write is path-scoped
-# to it (Write(//SANDBOX/**)). Read is NOT path-scoped (the skill must read the plugin's
-# matrix and templates). Scorer-mode calls run with cwd = the repo root.
+# Scope note: Read and Write are NOT path-scoped. They are bounded only by the cwd (a throwaway
+# sandbox in context mode, the repo root in scorer mode), --setting-sources project and the
+# budget cap. A Write(//path/**) rule was tried live on macOS and was denied, so scoping
+# (perhaps via an Edit(...) rule) is left for a follow-up.
 set -euo pipefail
 
 usage() {
@@ -26,7 +27,7 @@ Usage: run.sh --out DIR [--mode scorer|context] [--runs N] [--model ALIAS]
   --budget    --max-budget-usd cap for each claude call, 0 < USD <= 5.00 (default 1.50).
               A single call costs about 0.07-0.10 USD baseline before any work.
   --tag       output subdirectory name, [A-Za-z0-9._-]+ (default derived from the options)
-Only Write is path-scoped (to the context sandbox); Read is not path-scoped.
+Read and Write are not path-scoped beyond the working directory.
 Exit codes: 0 ok, 1 one or more claude calls failed, 2 bad usage.
 EOF
   exit 2
@@ -134,7 +135,7 @@ else
     SANDBOX="$(cd "$(mktemp -d)" && pwd -P)"  # physical path: the Write rule must match the resolved one
     if [ "$ARM" = with-docs ]; then cp "$FIXTURE/sandbox-with-docs/README.md" "$SANDBOX/README.md"; fi
     CALL_DIR="$SANDBOX" call_to "$dir/session.out.json" "$(cat "$FIXTURE/context-prompt.md")" \
-      Skill Agent Read Grep Glob "Write(/${SANDBOX}/**)" "Bash(mkdir:*)" "Bash(date:*)"
+      Skill Agent Read Grep Glob Write "Bash(mkdir:*)" "Bash(date:*)"
     found=()
     while IFS= read -r line; do [ -z "$line" ] || found+=("$line"); done < <(
       find "$SANDBOX/docs/analysis" -name locked-context.md 2>/dev/null || true)
