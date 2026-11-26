@@ -9,7 +9,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import score  # noqa: E402
 SKILL = ROOT / "skills" / "build-vs-buy" / "SKILL.md"
-COMMAND = ROOT / "commands" / "build-vs-buy.md"
 
 
 class SkillFile(unittest.TestCase):
@@ -20,6 +19,13 @@ class SkillFile(unittest.TestCase):
         head = self.text.split("---", 2)[1]
         self.assertIn("name: build-vs-buy", head)
         self.assertRegex(head, r"description: .+")
+
+    def test_skill_is_the_entry_point(self):
+        head = self.text.split("---", 2)[1]
+        self.assertIn("argument-hint: <topic> [--quick]", head)
+        self.assertIn("model: sonnet", head)
+        self.assertIn("`$ARGUMENTS`", self.text)
+        self.assertFalse((ROOT / "commands" / "build-vs-buy.md").exists())
 
     def test_references_every_runtime_asset(self):
         for ref in ("matrix.md", "templates/final.md", "templates/candidate.md",
@@ -100,16 +106,6 @@ class SkillFile(unittest.TestCase):
                     "../../agents/bvb-researcher.md", "../../agents/bvb-scorer.md",
                     "templates/locked-context.md"):
             self.assertTrue((base / rel).is_file(), rel)
-
-
-class CommandFile(unittest.TestCase):
-    def test_command_hands_args_to_skill(self):
-        text = COMMAND.read_text(encoding="utf-8")
-        self.assertRegex(text, r"description: .+")
-        self.assertIn("$ARGUMENTS", text)
-        self.assertIn("build-vs-buy", text)
-        self.assertIn("argument-hint:", text)
-        self.assertIn("Skill tool", text)
 
 
 class Readme(unittest.TestCase):

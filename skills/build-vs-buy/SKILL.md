@@ -1,15 +1,17 @@
 ---
 name: build-vs-buy
 description: Use when the owner wants to evaluate whether to build something or adopt an existing tool. Interviews the owner, researches candidates in parallel, scores them with the build-vs-buy matrix, and writes the analysis (analysis only, never a decision) to docs/analysis/.
+argument-hint: <topic> [--quick]
+model: sonnet
 ---
 
 # Build vs buy analysis
 
 You produce an analysis that feeds a decision. You never make or record the decision. Follow the steps in order.
 
-**Paths.** This skill's base directory is announced when the skill loads. The matrix is `matrix.md` and the templates are in `templates/` beside this file. The scripts are two levels up: `<skill base dir>/../../scripts/score.py` and `<skill base dir>/../../scripts/build_html.py`. Read `matrix.md` fully before step 1; it defines every scale, modifier, gate and weight.
+**Paths.** This skill's base directory is announced when the skill loads. The matrix is `matrix.md` and the templates are in `templates/` beside this file. The scripts are in the plugin's `scripts/` directory: `${CLAUDE_PLUGIN_ROOT}/scripts/score.py` and `${CLAUDE_PLUGIN_ROOT}/scripts/build_html.py`. Read `matrix.md` fully before step 1; it defines every scale, modifier, gate and weight.
 
-**Arguments.** The command passes `<topic> [--quick]`. `--quick` selects the matrix's quick version: score only Fit, Maintenance effort, Dependency count, Time to value and Security (`mode: quick` in `score.py`). Without a topic, ask for one.
+**Arguments.** `$ARGUMENTS` holds `<topic> [--quick]`. `--quick` selects the matrix's quick version: score only Fit, Maintenance effort, Dependency count, Time to value and Security (`mode: quick` in `score.py`). Without a topic, ask for one.
 
 ## Rules
 
@@ -86,7 +88,7 @@ Each scorer replies with one json block holding an `options` list with one entry
 `prerelease` is one of `none`, `stable_beta`, `unstable_beta`, `alpha`. `must_haves_met` is false when a now-must-have cannot be done (Fit would be 1). `mode` is `quick` with only the five quick factors for `--quick`. If a scorer's reply is not one valid json block, re-dispatch that candidate's scorer once with the problem described; if it fails again, tell the owner which candidate failed and stop. Run:
 
 ```bash
-python3 "<skill base dir>/../../scripts/score.py" <input.json>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/score.py" <input.json>
 ```
 
 Use its output for all totals, percentages, gates, ranking and the close-call flag. Do not do this arithmetic yourself. Exit code 2 means invalid input: read the message and fix the input; if the cause is one scorer's entry, re-dispatch that scorer once with the message.
@@ -100,5 +102,5 @@ Show the owner the score table (per option: each factor's final score (for Secur
 1. Directory: `docs/analysis/bvb-<slug>-YYYYMMDD/` where `<slug>` is the topic lowercased with non-alphanumerics replaced by single hyphens, leading and trailing hyphens removed, and `YYYYMMDD` is today's date. Use `bvb-<slug>-YYYYMMDD` as the name pattern. If it exists, append `-2`, then `-3`, and so on. You created this directory after Checkpoint 1; create its `candidates/` subdirectory now.
 2. One file per option at `candidates/<candidate-slug>.md` using `templates/candidate.md`: fill every row with Base, Modifiers, Final, Why, Evidence and Status. Take Base, Modifiers, Why, Evidence and Status from that candidate's scorer entry (with any owner override applied) and Final from `score.py`; take the remaining facts from its report. A reader must be able to check and refute each score. Include the gates, weighted subtotal, "Could not verify" and "Owner overrides" sections.
 3. `final.md` from `templates/final.md`: frontmatter with `status: analysis`, the Step 0 context, the confirmed stack summary, the `## Scores` table, ranking (with the close-call note), overrides, unverified items, revisit conditions, exit notes per option, and tuning suggestions. Do not recommend a choice. In quick mode use the `mode: quick` table in the template (the five quick factors, max 60) and delete the full table; in full mode delete the quick table.
-4. Generate the HTML view: `python3 "<skill base dir>/../../scripts/build_html.py" <run directory>`.
+4. Generate the HTML view: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_html.py" <run directory>`.
 5. Report to the owner: the run directory path, the ranking, whether it is a close call, and the unverified items. Remind them that the analysis is not a decision. Do not commit unless asked.

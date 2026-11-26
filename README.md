@@ -28,6 +28,17 @@ The agent will:
 4. Show you the scores and evidence. You challenge or override any score (checkpoint 2).
 5. Write the results.
 
+### Run one stage
+
+The stages can run on their own, on files. This is how the drift harness in `tools/drift/` works.
+
+```
+/build-vs-buy:researcher <locked-context.md> <candidate name and type>
+/build-vs-buy:scorer <locked-context.md> <report.md> [<report.md> ...]
+```
+
+Add `--model <alias>` to override a stage's pinned model for one run. `locked-context.md` is written into the run directory at checkpoint 1.
+
 ## Output
 
 ```
