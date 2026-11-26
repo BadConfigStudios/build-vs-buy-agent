@@ -20,6 +20,7 @@ FAKE_CLAUDE = """#!/usr/bin/env bash
     "${CLAUDE_CODE_SUBAGENT_MODEL_FORCE-unset}" "$PWD"
   printf 'ENV_ANTHROPIC=%s/%s/%s/%s\\n' "${ANTHROPIC_MODEL-unset}" "${ANTHROPIC_DEFAULT_SONNET_MODEL-unset}" \\
     "${ANTHROPIC_DEFAULT_OPUS_MODEL-unset}" "${ANTHROPIC_DEFAULT_HAIKU_MODEL-unset}"
+  echo "PHYS=$(pwd -P)"
   if [ -f README.md ]; then echo README=yes; else echo README=no; fi
 } >> "$FAKE_LOG"
 if [ -n "${FAKE_FAIL-}" ]; then echo partial; exit 1; fi
@@ -140,6 +141,9 @@ class RunSh(unittest.TestCase):
         self.assertIsNotNone(m, text)
         pwd = re.search(r"PWD=(\S+)", text).group(1)
         self.assertIn(f"Write(/{pwd}/**)", text)
+        phys = re.search(r"PHYS=(\S+)", text).group(1)
+        self.assertEqual(pwd, phys)
+        self.assertIn(f"Write(/{phys}/**)", text)
         self.assertNotIn("[Write]", text)
 
     def test_missing_or_duplicate_locked_context_fails_the_run(self):

@@ -131,7 +131,7 @@ else
   for ((k=1; k<=RUNS; k++)); do
     dir="$OUT/$TAG/run-$k"
     mkdir -p "$dir"
-    SANDBOX="$(mktemp -d)"
+    SANDBOX="$(cd "$(mktemp -d)" && pwd -P)"  # physical path: the Write rule must match the resolved one
     if [ "$ARM" = with-docs ]; then cp "$FIXTURE/sandbox-with-docs/README.md" "$SANDBOX/README.md"; fi
     CALL_DIR="$SANDBOX" call_to "$dir/session.out.json" "$(cat "$FIXTURE/context-prompt.md")" \
       Skill Agent Read Grep Glob "Write(/${SANDBOX}/**)" "Bash(mkdir:*)" "Bash(date:*)"
