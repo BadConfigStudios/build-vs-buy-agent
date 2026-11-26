@@ -112,7 +112,7 @@ Run on 2026-11-26, Claude Code 2.1.332. Scratch copy of the plugin at `<scratch>
 | Per-call `model` on a subagent dispatch beats the agent's pinned model? | yes (run 2 modelUsage: `claude-haiku-5-5` and `claude-opus-5-5`, no sonnet; run 1 without override: haiku and `claude-sonnet-5-5`) |
 | Subagent dispatch name that resolves | `build-vs-buy:bvb-ping` (bare `bvb-ping` fails: "Agent type 'bvb-ping' not found. Available agents: build-vs-buy:bvb-ping, ...") |
 | `claude -p "/plugin:skill args"` with `--plugin-dir` | works: `claude -p "/build-vs-buy:ping a b" --plugin-dir <scratch>/plugin` runs the skill headless |
-| `--allowedTools` form that worked headless | `--allowedTools Skill Agent` (space-separated, no permission denials) |
+| `--allowedTools` form that worked headless (the Read/Grep/Glob/Web/Bash additions the plan uses are untested here; note for Task 9) | `--allowedTools Skill Agent` (space-separated, no permission denials) |
 | `claude plugin validate` invocation | `claude plugin validate --strict .` from the repo root, exit 0 ("Validation passed") |
 
 Notes: `--output-format json` `result` holds only the final message, so the `ROOT=`/`ARGS=` lines are visible only with `--output-format stream-json --verbose`. The slash command expands the skill inline, so the `model:` pin applies to the main turn.
