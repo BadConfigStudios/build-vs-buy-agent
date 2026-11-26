@@ -46,7 +46,7 @@ Verify before relying on them (not documented): the namespaced `agent:` value fo
 
 ## Fixture
 
-One live research run on the email-notifier case with the fictional stack, five candidates. The unscored researcher reports are frozen under `evals/drift/fixtures/` with their retrieval dates and a label saying they are a point-in-time snapshot. The case is a close call, which is where drift shows.
+One live research run on the email-notifier case with the fictional stack, five candidates. The unscored researcher reports are frozen under `tools/drift/fixtures/` (not `evals/`, so `claude plugin eval` never mistakes the harness for an eval case) with their retrieval dates and a label saying they are a point-in-time snapshot. The case is a close call, which is where drift shows.
 
 Two arms, one shared prompt file with identical scripted Step 0 answers:
 
