@@ -16,6 +16,7 @@ Spec: `docs/superpowers/specs/2026-11-26-drift-test-design.md`. Issues: #30, #31
 - `skills/build-vs-buy/matrix.md` is not edited (stays v1.3). Calibration is milestone 0.3.0 (#40).
 - Analysis only: no agent or skill text may recommend, rank for the owner, or decide.
 - `bvb-scorer` is read-only: `tools: Read, Grep, Glob`, exactly.
+- Task 2 results (owner decisions, 2026-11-26): subagent dispatch names are namespaced, `build-vs-buy:bvb-scorer` and `build-vs-buy:bvb-researcher`; the bare names fail. The agent files keep `name: bvb-scorer` / `name: bvb-researcher` and their file names. Wherever skill text tells the model to dispatch one of these agents, write the namespaced name, and tests that assert on that text use the namespaced name (so an assertion like ``one `bvb-scorer` subagent per candidate`` becomes ``one `build-vs-buy:bvb-scorer` subagent per candidate``). A same-named command shadows a skill, so the skill becomes the entry point and `commands/build-vs-buy.md` is deleted (Task 6, owner-approved), with a real run to confirm the skill starts.
 - Pinned default models: researcher `sonnet` (agent file), scorer `sonnet` (agent file), orchestrator `sonnet` (skill `model:`, if Task 2 verifies the pin). A per-call model always wins over a pinned one.
 - Research is always fresh in the production flow. The standalone scorer taking saved reports is for tests and re-scoring only.
 - The harness spends tokens: never run it in CI, never use `--dangerously-skip-permissions`, always unset `CLAUDE_CODE_SUBAGENT_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, always cap each call with `--max-budget-usd`.
@@ -46,7 +47,7 @@ Before PR A starts: PR #39 (this spec and plan) is merged.
 - `skills/build-vs-buy/templates/locked-context.md`: new, the locked-context file format (Task 4).
 - `agents/bvb-scorer.md`: new read-only scorer (Task 3).
 - `skills/scorer/SKILL.md`, `skills/researcher/SKILL.md`: new stage skills (Task 5).
-- `commands/build-vs-buy.md`: removed if Task 2 shows the skill shadows it (Task 6).
+- `commands/build-vs-buy.md`: removed (Task 2 showed the command shadows the skill; owner chose the skill as entry point, Task 6).
 - `tools/drift/analyze.py`: deterministic analyzer (Task 7). `tools/drift/run.sh`: harness (Task 9). `tools/drift/fixtures/`: frozen inputs (Task 8). The harness lives in `tools/`, not `evals/`, so `claude plugin eval` never mistakes it for an eval case.
 - `tests/test_skill.py` (modified), `tests/test_scorer_agent.py`, `tests/test_stage_skills.py`, `tests/test_plugin_validate.py`, `tests/test_drift_analyze.py`, `tests/test_drift_fixture.py`, `tests/test_drift_run.py`: new or modified tests.
 - `docs/drift/`: the baseline report (Task 10).
@@ -886,14 +887,14 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: the Task 2 results. Branches below follow them.
 
-- [ ] **Step 1: Entry point (only if Task 2 recorded "skill wins")**
+- [ ] **Step 1: Entry point (owner-approved: delete the shadowing command, skill is the entry point)**
 
 Fold the command's `argument-hint` into the skill, pin the orchestrator model, delete the shadowed command, and replace its test. If Task 2 recorded that the `model:` pin does not apply to a skill, delete the `model: sonnet` insertion in the script and the `assertIn("model: sonnet", head)` line before running it.
 
 ````python
 import pathlib
 
-# Branch (a): T2 showed the skill wins over a same-named command.
+# T2 showed the command shadows the skill; the owner chose to delete the command and make the skill the entry point.
 skill = pathlib.Path("skills/build-vs-buy/SKILL.md")
 text = skill.read_text(encoding="utf-8")
 marker = "\n---\n\n# Build vs buy analysis"
@@ -1015,6 +1016,8 @@ gh pr create --title "feat(skills): stage skills, entry-point cleanup, strict va
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 ```
+
+Manual verification must include running the skill as the entry point with the command gone (`claude -p "/build-vs-buy:build-vs-buy test topic" --plugin-dir <scratch copy> --max-turns 2 --max-budget-usd 0.50`, with `CLAUDE_CODE_SUBAGENT_MODEL` unset): it must start the skill (it asks or proceeds on the topic), not fail with an unknown command. If it does not start, stop and report to the owner.
 
 Run `/code-review`, do the manual verification (run `/build-vs-buy:scorer` once on a fixture-shaped input, and `/build-vs-buy` on a topic), report it, and stop for the owner.
 

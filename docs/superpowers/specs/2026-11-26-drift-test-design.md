@@ -116,3 +116,5 @@ Run on 2026-11-26, Claude Code 2.1.332. Scratch copy of the plugin at `<scratch>
 | `claude plugin validate` invocation | `claude plugin validate --strict .` from the repo root, exit 0 ("Validation passed") |
 
 Notes: `--output-format json` `result` holds only the final message, so the `ROOT=`/`ARGS=` lines are visible only with `--output-format stream-json --verbose`. The slash command expands the skill inline, so the `model:` pin applies to the main turn.
+
+Decisions from these results (owner, 2026-11-26): subagents are dispatched by their namespaced names, `build-vs-buy:bvb-scorer` and `build-vs-buy:bvb-researcher`. Because the command shadows the skill, `commands/build-vs-buy.md` is deleted and the skill is the entry point, with a real run to confirm it starts (plan Task 6).
