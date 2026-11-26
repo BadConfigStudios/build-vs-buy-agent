@@ -54,6 +54,17 @@ class ScorerAgent(unittest.TestCase):
         for factor in example["options"][0]["factors"].values():
             self.assertEqual(set(factor), {"base", "modifiers", "why", "evidence", "status"})
 
+    def test_example_bases_match_matrix_bands(self):
+        blocks = re.findall(r"```json\n(.+?)\n```", self.body, re.S)
+        factors = json.loads(blocks[0])["options"][0]["factors"]
+        self.assertEqual(factors["unused_baggage"]["base"], 2)
+        self.assertEqual(factors["time_to_value"]["base"], 5)
+        self.assertEqual(factors["cost"]["base"], 5)
+        self.assertEqual(factors["install"]["base"], 4)
+
+    def test_restricts_reads_to_prompt_files(self):
+        self.assertIn("Read only the files named in the prompt", self.body)
+
     def test_researcher_prerelease_enum_matches(self):
         text = RESEARCHER.read_text(encoding="utf-8")
         for value in score.PRERELEASE:
