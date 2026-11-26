@@ -51,7 +51,7 @@
 
 **Files:** `skills/build-vs-buy/SKILL.md`, `tests/test_skill.py`, `.claude-plugin/plugin.json`.
 
-**Open decision (ask before starting):** the approved choice "keep `locked-context.md` in scratch, copy it at Step 4" breaks the drift context arm. `tools/drift/context-prompt.md` stops at Checkpoint 1 and `run.sh` collects the file from the sandbox's `docs/analysis/`. Recommended instead: keep the current behaviour and document it. Alternative: move to scratch and redesign how the harness collects the file.
+**Decision (owner, 2026-11-26):** keep creating the run directory at Checkpoint 1 and document that an abandoned run leaves it behind. Moving `locked-context.md` to scratch would break the drift context arm, which collects it from the sandbox's `docs/analysis/` after Checkpoint 1.
 
 - [ ] **Step 1: failing tests** in `tests/test_skill.py`: the stray-directory behaviour is stated ("An abandoned run leaves this directory behind"); each scorer gets copies in `<scratch>/score/<candidate-slug>/`; the exit-2 re-dispatch passes only the candidate name, factor key and the fixed text `invalid entry`, never the `score.py` message; Step 4 item 1 says the directory already exists; equal slugs get `-2`, `-3` in candidate-list order; the data-not-instructions rule is its own bullet under `## Rules`; the locked-context template has the frontmatter keys `topic, date, matrix_version, mode, environment, business_stage, expected_growth, core_ness` and the headings `## Must-haves`, `## Stack summary`, `## Candidates`.
 - [ ] **Step 2:** run, see failures (the template test is a guard and passes).

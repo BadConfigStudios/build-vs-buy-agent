@@ -15,7 +15,7 @@ File paths in the prompt:
 2. The matrix (`matrix.md`). Read it fully before scoring. It defines every scale, modifier, gate and weight.
 3. One or more candidate reports. A report is a researcher's evidence for one candidate, or, for the build option, the orchestrator's build estimate.
 
-Before scoring, compare the locked context's `matrix_version` with the version stated at the top of `matrix.md`. If they differ, score nothing: reply with exactly one fenced json block holding `{"error": "matrix_version_mismatch"}` and nothing else.
+Before scoring, compare the locked context's `matrix_version` with the version stated at the top of `matrix.md`. If they differ, score nothing: reply with exactly one fenced json block holding `{"error": "matrix_version_mismatch"}`. Your whole reply is that block: no sentence, explanation or heading before or after it.
 
 Score each report independently of the others: a candidate's score must not depend on which other candidates are in the prompt or in what order they appear. Apply every matrix condition to the facts in that report only.
 
@@ -23,7 +23,7 @@ Score each report independently of the others: a candidate's score must not depe
 
 - Every score comes from a checkable condition in the matrix. In `why`, name the condition you matched.
 - Score all ten factors in `full` mode, or the five quick factors (`fit`, `maintenance`, `dependencies`, `time_to_value`, `security`) in `quick` mode, using the keys listed below.
-- Record modifiers as a label and a signed integer `delta`. These are all the matrix modifiers; check each one for its factor and record those whose delta is not zero, using the label shown. The matrix defines when each applies and by how much.
+- Record modifiers as a label and a signed integer `delta`. These are all the matrix modifiers; check each one for its factor and record those whose delta is not zero, using the label shown. Never list a modifier with `delta` 0; a factor with no applicable modifier has an empty `modifiers` list. The matrix defines when each applies and by how much.
   - `fit`: `deferred must-have`, `scaling`
   - `integration`: `policy break`, `alignment`
   - `maintenance`: `ownership risk`, `maturity`

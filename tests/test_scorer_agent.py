@@ -154,6 +154,13 @@ class ScorerAgent(unittest.TestCase):
         self.assertIn("If you soften the `scaling` -1 to zero, name the owner-controlled interface in `why`",
                       self.body)
 
+    def test_forbids_zero_delta_modifiers(self):
+        self.assertIn("Never list a modifier with `delta` 0", self.body)
+
+    def test_mismatch_reply_forbids_commentary(self):
+        line = self.line_starting("Before scoring, compare")
+        self.assertIn("Your whole reply is that block: no sentence, explanation or heading before or after it.", line)
+
     def test_restricts_reads_to_prompt_files(self):
         self.assertIn("Read only the files named in the prompt", self.body)
 
