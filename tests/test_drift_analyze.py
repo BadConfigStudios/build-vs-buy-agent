@@ -71,6 +71,10 @@ class ParseLockedContext(unittest.TestCase):
 
 
 class ExtractOptions(unittest.TestCase):
+    def test_scorer_error_reply_is_named(self):
+        with self.assertRaisesRegex(ValueError, "scorer returned an error: matrix_version_mismatch"):
+            analyze.extract_options('```json\n{"error": "matrix_version_mismatch"}\n```')
+
     def test_reads_fenced_json(self):
         reply = "```json\n" + json.dumps({"options": [entry("A")]}) + "\n```"
         self.assertEqual(analyze.extract_options(reply)[0]["name"], "A")

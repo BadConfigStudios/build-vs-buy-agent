@@ -64,6 +64,8 @@ def extract_options(result_text):
             data = json.loads(matches[0].group(1))
         except RecursionError as exc:
             raise ValueError("json block is nested too deeply") from exc
+    if isinstance(data, dict) and "error" in data:
+        raise ValueError(f"scorer returned an error: {str(data['error'])[:100]}")
     options = data.get("options") if isinstance(data, dict) else None
     if not isinstance(options, list) or not options:
         raise ValueError("scorer reply has no options list")
