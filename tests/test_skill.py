@@ -120,6 +120,14 @@ class SkillFile(unittest.TestCase):
             self.assertIn(phrase, checkpoint, phrase)
         self.assertNotIn("naming in Step 4", self.text)
 
+    def test_later_writes_use_the_noted_absolute_run_path(self):
+        checkpoint = self.section("## Checkpoint 1", "## Step 2")
+        for phrase in ("Note the run directory's absolute path",
+                       "use that exact path for every later write into it",
+                       "It is in the repo you are in, never under the scratch directory"):
+            self.assertIn(phrase, checkpoint, phrase)
+        self.assertIn("at the absolute path you noted", self.text.split("## Step 4: Write the analysis")[1])
+
     def test_build_report_identifies_itself(self):
         self.assertIn("Section 1 must state that this is the build option",
                       self.section("## Step 2", "## Step 3"))
