@@ -99,19 +99,26 @@ FAILS=()
 SCORER_TOOLS=(Skill Agent Read Grep Glob)
 
 # call_to OUTFILE PROMPT TOOLS...  (cwd for claude: $CALL_DIR, default the repo root)
+# Returns 1 when the call failed; the failure is already recorded in FAILS.
 # Output goes to OUTFILE.tmp and is renamed only on success, so a failed or
 # budget-capped call never leaves a file the analyzer would read as a result.
 call_to() {
   local outfile="$1" prompt="$2"; shift 2
   # perl's alarm survives exec, so the signal ends claude itself (macOS has no timeout(1)).
-  if (cd "${CALL_DIR:-$ROOT}" && perl -e 'alarm shift @ARGV; exec @ARGV or die' "$TIMEOUT" claude -p "$prompt" --plugin-dir "$ROOT" --output-format json \
+  if (cd "${CALL_DIR:-$ROOT}" && perl -e 'alarm shift @ARGV; exec @ARGV or die "cannot exec $ARGV[0]: $!\n"' "$TIMEOUT" claude -p "$prompt" --plugin-dir "$ROOT" --output-format json \
         --setting-sources project --strict-mcp-config \
         --max-budget-usd "$BUDGET" --allowedTools "$@") > "$outfile.tmp"; then
     mv "$outfile.tmp" "$outfile"
   else
+    local status=$?
     rm -f "$outfile.tmp"
     FAILS+=("$outfile")
-    echo "run.sh: claude failed for $outfile" >&2
+    if [ "$status" -eq 142 ]; then  # 128 + SIGALRM
+      echo "run.sh: claude timed out after $TIMEOUT seconds for $outfile" >&2
+    else
+      echo "run.sh: claude failed for $outfile" >&2
+    fi
+    return 1
   fi
 }
 
@@ -125,7 +132,7 @@ if [ "$MODE" = scorer ]; then
     if [ "$TOPOLOGY" = independent ]; then
       for report in "${REPORTS[@]}"; do
         slug="$(basename "$report" .md)"
-        call_to "$dir/$slug.out.json" "/build-vs-buy:scorer $LOCKED$EXTRA $report" "${SCORER_TOOLS[@]}"
+        call_to "$dir/$slug.out.json" "/build-vs-buy:scorer $LOCKED$EXTRA $report" "${SCORER_TOOLS[@]}" || :
       done
     else
       ORDER=()
@@ -133,7 +140,7 @@ if [ "$MODE" = scorer ]; then
         python3 -c 'import random,sys; r=random.Random(int(sys.argv[1])); a=sys.argv[2:]; r.shuffle(a); print("\n".join(a))' \
           "$k" "${REPORTS[@]}")
       printf '%s\n' "${ORDER[@]}" > "$dir/order.txt"
-      call_to "$dir/all.out.json" "/build-vs-buy:scorer $LOCKED$EXTRA ${ORDER[*]}" "${SCORER_TOOLS[@]}"
+      call_to "$dir/all.out.json" "/build-vs-buy:scorer $LOCKED$EXTRA ${ORDER[*]}" "${SCORER_TOOLS[@]}" || :
     fi
   done
 else
@@ -141,20 +148,23 @@ else
     dir="$OUT/$TAG/run-$k"
     mkdir -p "$dir"
     SANDBOX="$(cd "$(mktemp -d)" && pwd -P)"
+    # The path goes into a permission rule, where other characters could change its meaning.
+    [[ "$SANDBOX" =~ ^/[A-Za-z0-9._/+-]+$ ]] || die "unsupported character in sandbox path: $SANDBOX"
     if [ "$ARM" = with-docs ]; then cp "$FIXTURE/sandbox-with-docs/README.md" "$SANDBOX/README.md"; fi
-    CALL_DIR="$SANDBOX" call_to "$dir/session.out.json" "$(cat "$FIXTURE/context-prompt.md")" \
-      Skill Agent Read Grep Glob "Edit(/$SANDBOX/**)" "Bash(mkdir:*)" "Bash(date:*)"
-    found=()
-    while IFS= read -r line; do [ -z "$line" ] || found+=("$line"); done < <(
-      find "$SANDBOX/docs/analysis" -name locked-context.md 2>/dev/null || true)
-    if [ "${#found[@]}" -gt 1 ]; then
-      echo "run.sh: run-$k: more than one locked-context.md in the sandbox" >&2
-      FAILS+=("$dir/locked-context.md (more than one)")
-    elif [ "${#found[@]}" -eq 1 ]; then
-      cp "${found[0]}" "$dir/locked-context.md"
-    else
-      echo "run.sh: run-$k: no locked-context.md written" >&2
-      FAILS+=("$dir/locked-context.md (missing)")
+    if CALL_DIR="$SANDBOX" call_to "$dir/session.out.json" "$(cat "$FIXTURE/context-prompt.md")" \
+      Skill Agent Read Grep Glob "Edit(/$SANDBOX/**)" "Bash(mkdir:*)" "Bash(date:*)"; then
+      found=()
+      while IFS= read -r line; do [ -z "$line" ] || found+=("$line"); done < <(
+        find "$SANDBOX/docs/analysis" -name locked-context.md 2>/dev/null || true)
+      if [ "${#found[@]}" -gt 1 ]; then
+        echo "run.sh: run-$k: more than one locked-context.md in the sandbox" >&2
+        FAILS+=("$dir/locked-context.md (more than one)")
+      elif [ "${#found[@]}" -eq 1 ]; then
+        cp "${found[0]}" "$dir/locked-context.md"
+      else
+        echo "run.sh: run-$k: no locked-context.md written" >&2
+        FAILS+=("$dir/locked-context.md (missing)")
+      fi
     fi
     rm -rf "$SANDBOX"; SANDBOX=""
   done

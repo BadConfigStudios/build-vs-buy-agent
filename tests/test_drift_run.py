@@ -24,6 +24,10 @@ FAKE_CLAUDE = """#!/usr/bin/env bash
   if [ -f README.md ]; then echo README=yes; else echo README=no; fi
 } >> "$FAKE_LOG"
 if [ -n "${FAKE_SLEEP-}" ]; then exec sleep 5; fi
+if [ -n "${FAKE_WRITE_THEN_SLEEP-}" ]; then
+  mkdir -p docs/analysis/bvb-x && : > docs/analysis/bvb-x/locked-context.md
+  exec sleep 5
+fi
 if [ -n "${FAKE_FAIL-}" ]; then echo partial; exit 1; fi
 case "$*" in
   *"/build-vs-buy:scorer"*) echo '{"result": "ok", "total_cost_usd": 0.01}' ;;
@@ -133,7 +137,7 @@ class RunSh(unittest.TestCase):
         for extra in (["--topology", "centralized"], ["--mode", "context"]):
             proc = self.run_sh("--runs", "1", "--timeout", "1", *extra)
             self.assertEqual(proc.returncode, 1, proc.stderr)
-            self.assertIn("claude failed", proc.stderr)
+            self.assertIn("claude timed out", proc.stderr)
         self.assertEqual(list(self.out.rglob("*.out.json*")), [])
 
     def test_timeout_edges_are_accepted(self):
@@ -251,12 +255,55 @@ class RunSh(unittest.TestCase):
             self.assertIn("failed", proc.stderr)
         self.assertEqual(list(self.out.rglob("*.out.json*")), [])
 
+    def sandboxes(self):
+        # macOS mktemp -d ignores TMPDIR, so check the directories claude actually ran in.
+        return [pathlib.Path(l.split("PWD=")[1]) for l in self.calls() if "PWD=" in l]
+
     def test_sandbox_removed_after_run_and_on_failure(self):
         self.run_sh("--mode", "context", "--runs", "2")
-        self.assertEqual(list(self.tmpdir.iterdir()), [])
         self.env["FAKE_FAIL"] = "1"
-        self.run_sh("--mode", "context", "--runs", "1")
-        self.assertEqual(list(self.tmpdir.iterdir()), [])
+        self.run_sh("--mode", "context", "--runs", "1", "--tag", "failing")
+        used = self.sandboxes()
+        self.assertEqual(len(used), 3)
+        for sandbox in used:
+            self.assertNotEqual(sandbox, ROOT)
+            self.assertFalse(sandbox.exists(), sandbox)
+
+    def test_a_timed_out_context_run_collects_nothing(self):
+        self.env["FAKE_WRITE_THEN_SLEEP"] = "1"
+        proc = self.run_sh("--mode", "context", "--runs", "2", "--timeout", "1")
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertEqual(len(self.sandboxes()), 2)
+        self.assertEqual(list(self.out.rglob("locked-context.md")), [])
+        self.assertNotIn("locked-context.md written", proc.stderr)
+
+    def test_a_timeout_is_named_and_other_failures_are_not(self):
+        self.env["FAKE_SLEEP"] = "1"
+        proc = self.run_sh("--runs", "1", "--topology", "centralized", "--timeout", "1")
+        self.assertIn("timed out after 1 seconds", proc.stderr)
+        del self.env["FAKE_SLEEP"]
+        self.env["FAKE_FAIL"] = "1"
+        proc = self.run_sh("--runs", "1", "--topology", "centralized", "--tag", "failing")
+        self.assertIn("claude failed for", proc.stderr)
+        self.assertNotIn("timed out", proc.stderr)
+
+    def test_a_claude_that_cannot_start_is_named(self):
+        (self.dir / "bin" / "claude").unlink()
+        proc = self.run_sh("--runs", "1", "--topology", "centralized")
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertIn("cannot exec claude: ", proc.stderr)
+
+    def test_a_sandbox_path_unsafe_for_a_permission_rule_is_refused_before_any_call(self):
+        fake = self.dir / "bin" / "mktemp"
+        fake.write_text('#!/bin/sh\nmkdir -p "$FAKE_SANDBOX" && printf "%s\\n" "$FAKE_SANDBOX"\n', encoding="utf-8")
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        for i, name in enumerate(("a(1)", "a[1]", "a*", "a?", "a b", "a,b", "a{1}")):
+            self.env["FAKE_SANDBOX"] = str(self.tmpdir / name)
+            proc = self.run_sh("--mode", "context", "--runs", "1", "--tag", f"bad-{i}")
+            self.assertEqual(proc.returncode, 2, (name, proc.stderr))
+            self.assertIn("sandbox path", proc.stderr)
+            self.assertFalse((self.tmpdir / name).exists(), name)
+        self.assertFalse(self.log.exists())
 
 
 if __name__ == "__main__":
