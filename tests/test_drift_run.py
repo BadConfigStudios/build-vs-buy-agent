@@ -167,14 +167,21 @@ class RunSh(unittest.TestCase):
         pwds = [l.split("PWD=")[1] for l in self.calls() if "PWD=" in l]
         self.assertEqual([os.path.realpath(p) for p in pwds], [os.path.realpath(ROOT)])
 
-    def test_context_write_is_plain_and_sandbox_is_physical(self):
+    def test_context_write_is_scoped_to_the_physical_sandbox(self):
         self.run_sh("--mode", "context", "--runs", "1")
         text = self.log.read_text(encoding="utf-8")
-        self.assertIn("[Write]", text)
-        self.assertNotIn("Write(", text)
         pwd = re.search(r"PWD=(\S+)", text).group(1)
         phys = re.search(r"PHYS=(\S+)", text).group(1)
         self.assertEqual(pwd, phys)
+        # "//" starts an absolute path in a permission rule.
+        self.assertIn(f"[Edit(/{phys}/**)]", text)
+        self.assertNotIn("[Write]", text)
+        self.assertNotIn("[Edit]", text)
+
+    def test_usage_states_what_is_and_is_not_scoped(self):
+        proc = subprocess.run(["bash", str(RUN_SH)], capture_output=True, text=True, env=self.env)
+        self.assertIn("File writes are limited to the sandbox in context mode; Read and mkdir are not path-scoped.",
+                      proc.stderr)
 
     def test_missing_or_duplicate_locked_context_fails_the_run(self):
         for var in ("FAKE_NOWRITE", "FAKE_TWO"):

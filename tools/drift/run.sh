@@ -7,10 +7,10 @@
 #
 # Output: OUT/TAG/run-K/... ; read it with analyze.py.
 #
-# Scope note: Read and Write are NOT path-scoped. They are bounded only by the cwd (a throwaway
-# sandbox in context mode, the repo root in scorer mode), --setting-sources project and the
-# budget cap. A Write(//path/**) rule was tried live on macOS and was denied, so scoping
-# (perhaps via an Edit(...) rule) is left for a follow-up.
+# Scope note: in context mode, file writes are limited to the throwaway sandbox by an
+# Edit(//<physical sandbox path>/**) rule, which also covers the Write tool (checked live on
+# macOS; a Write(//path/**) rule was denied). Read and Bash(mkdir:*) are NOT path-scoped.
+# Calls are also bounded by --setting-sources project, the budget cap and the timeout.
 set -euo pipefail
 
 usage() {
@@ -30,7 +30,7 @@ Usage: run.sh --out DIR [--mode scorer|context] [--runs N] [--model ALIAS]
               A timed-out call counts as failed; its child processes may outlive it.
   --tag       output subdirectory name, [A-Za-z0-9._-]+ (default derived from the options)
 A non-empty OUT/TAG is refused: to rerun into the same tag, delete OUT/TAG first.
-Read and Write are not path-scoped beyond the working directory.
+File writes are limited to the sandbox in context mode; Read and mkdir are not path-scoped.
 Exit codes: 0 ok, 1 one or more claude calls failed, 2 bad usage.
 EOF
   exit 2
@@ -143,7 +143,7 @@ else
     SANDBOX="$(cd "$(mktemp -d)" && pwd -P)"
     if [ "$ARM" = with-docs ]; then cp "$FIXTURE/sandbox-with-docs/README.md" "$SANDBOX/README.md"; fi
     CALL_DIR="$SANDBOX" call_to "$dir/session.out.json" "$(cat "$FIXTURE/context-prompt.md")" \
-      Skill Agent Read Grep Glob Write "Bash(mkdir:*)" "Bash(date:*)"
+      Skill Agent Read Grep Glob "Edit(/$SANDBOX/**)" "Bash(mkdir:*)" "Bash(date:*)"
     found=()
     while IFS= read -r line; do [ -z "$line" ] || found+=("$line"); done < <(
       find "$SANDBOX/docs/analysis" -name locked-context.md 2>/dev/null || true)
