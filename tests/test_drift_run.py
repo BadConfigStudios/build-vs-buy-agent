@@ -23,6 +23,11 @@ FAKE_CLAUDE = """#!/usr/bin/env bash
   echo "PHYS=$(pwd -P)"
   if [ -f README.md ]; then echo README=yes; else echo README=no; fi
 } >> "$FAKE_LOG"
+if [ -n "${FAKE_SLEEP-}" ]; then exec sleep 5; fi
+if [ -n "${FAKE_WRITE_THEN_SLEEP-}" ]; then
+  mkdir -p docs/analysis/bvb-x && : > docs/analysis/bvb-x/locked-context.md
+  exec sleep 5
+fi
 if [ -n "${FAKE_FAIL-}" ]; then echo partial; exit 1; fi
 case "$*" in
   *"/build-vs-buy:scorer"*) echo '{"result": "ok", "total_cost_usd": 0.01}' ;;
@@ -120,10 +125,42 @@ class RunSh(unittest.TestCase):
                      out + ["--runs", "0"], out + ["--runs", "31"], out + ["--runs", "-1"],
                      out + ["--budget", "0"], out + ["--budget", "5.01"], out + ["--budget", "abc"],
                      out + ["--budget", "-1"], out + ["--tag", ".."], out + ["--tag", "a/b"],
-                     out + ["--model", "x y"], out + ["--runs"], out + ["--tag"]):
+                     out + ["--model", "x y"], out + ["--runs"], out + ["--tag"],
+                     out + ["--timeout", "0"], out + ["--timeout", "3601"], out + ["--timeout", "1.5"],
+                     out + ["--timeout", "abc"], out + ["--timeout", "-1"], out + ["--timeout"]):
             proc = subprocess.run(["bash", str(RUN_SH), *args], capture_output=True, text=True, env=self.env)
             self.assertEqual(proc.returncode, 2, args)
         self.assertFalse(self.log.exists())
+
+    def test_a_call_past_the_timeout_fails_and_leaves_no_result_file(self):
+        self.env["FAKE_SLEEP"] = "1"
+        for extra in (["--topology", "centralized"], ["--mode", "context"]):
+            proc = self.run_sh("--runs", "1", "--timeout", "1", *extra)
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertIn("claude timed out", proc.stderr)
+        self.assertEqual(list(self.out.rglob("*.out.json*")), [])
+
+    def test_timeout_edges_are_accepted(self):
+        for value in ("1800", "3600", "0900"):
+            proc = subprocess.run(["bash", str(RUN_SH), "--out", str(self.dir / value), "--runs", "1",
+                                   "--topology", "centralized", "--timeout", value],
+                                  capture_output=True, text=True, env=self.env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_usage_covers_the_timeout_and_reruns(self):
+        proc = subprocess.run(["bash", str(RUN_SH)], capture_output=True, text=True, env=self.env)
+        for phrase in ("--timeout", "default 900", "child processes may outlive",
+                       "delete OUT/TAG first"):
+            self.assertIn(phrase, proc.stderr)
+
+    def test_both_scorer_calls_get_the_same_tools(self):
+        for topology in ("independent", "centralized"):
+            self.log.unlink(missing_ok=True)
+            proc = subprocess.run(["bash", str(RUN_SH), "--out", str(self.dir / topology), "--runs", "1",
+                                   "--topology", topology], capture_output=True, text=True, env=self.env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            for line in (l for l in self.calls() if l.startswith("ARGS:")):
+                self.assertTrue(line.endswith("[--allowedTools] [Skill] [Agent] [Read] [Grep] [Glob]"), line)
 
     def test_model_env_overrides_are_unset(self):
         self.run_sh("--runs", "1", "--topology", "centralized")
@@ -134,14 +171,21 @@ class RunSh(unittest.TestCase):
         pwds = [l.split("PWD=")[1] for l in self.calls() if "PWD=" in l]
         self.assertEqual([os.path.realpath(p) for p in pwds], [os.path.realpath(ROOT)])
 
-    def test_context_write_is_plain_and_sandbox_is_physical(self):
+    def test_context_write_is_scoped_to_the_physical_sandbox(self):
         self.run_sh("--mode", "context", "--runs", "1")
         text = self.log.read_text(encoding="utf-8")
-        self.assertIn("[Write]", text)
-        self.assertNotIn("Write(", text)
         pwd = re.search(r"PWD=(\S+)", text).group(1)
         phys = re.search(r"PHYS=(\S+)", text).group(1)
         self.assertEqual(pwd, phys)
+        # "//" starts an absolute path in a permission rule.
+        self.assertIn(f"[Edit(/{phys}/**)]", text)
+        self.assertNotIn("[Write]", text)
+        self.assertNotIn("[Edit]", text)
+
+    def test_usage_states_what_is_and_is_not_scoped(self):
+        proc = subprocess.run(["bash", str(RUN_SH)], capture_output=True, text=True, env=self.env)
+        self.assertIn("File writes are limited to the sandbox in context mode; Read and mkdir are not path-scoped.",
+                      proc.stderr)
 
     def test_missing_or_duplicate_locked_context_fails_the_run(self):
         for var in ("FAKE_NOWRITE", "FAKE_TWO"):
@@ -211,12 +255,55 @@ class RunSh(unittest.TestCase):
             self.assertIn("failed", proc.stderr)
         self.assertEqual(list(self.out.rglob("*.out.json*")), [])
 
+    def sandboxes(self):
+        # macOS mktemp -d ignores TMPDIR, so check the directories claude actually ran in.
+        return [pathlib.Path(l.split("PWD=")[1]) for l in self.calls() if "PWD=" in l]
+
     def test_sandbox_removed_after_run_and_on_failure(self):
         self.run_sh("--mode", "context", "--runs", "2")
-        self.assertEqual(list(self.tmpdir.iterdir()), [])
         self.env["FAKE_FAIL"] = "1"
-        self.run_sh("--mode", "context", "--runs", "1")
-        self.assertEqual(list(self.tmpdir.iterdir()), [])
+        self.run_sh("--mode", "context", "--runs", "1", "--tag", "failing")
+        used = self.sandboxes()
+        self.assertEqual(len(used), 3)
+        for sandbox in used:
+            self.assertNotEqual(sandbox, ROOT)
+            self.assertFalse(sandbox.exists(), sandbox)
+
+    def test_a_timed_out_context_run_collects_nothing(self):
+        self.env["FAKE_WRITE_THEN_SLEEP"] = "1"
+        proc = self.run_sh("--mode", "context", "--runs", "2", "--timeout", "1")
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertEqual(len(self.sandboxes()), 2)
+        self.assertEqual(list(self.out.rglob("locked-context.md")), [])
+        self.assertNotIn("locked-context.md written", proc.stderr)
+
+    def test_a_timeout_is_named_and_other_failures_are_not(self):
+        self.env["FAKE_SLEEP"] = "1"
+        proc = self.run_sh("--runs", "1", "--topology", "centralized", "--timeout", "1")
+        self.assertIn("timed out after 1 seconds", proc.stderr)
+        del self.env["FAKE_SLEEP"]
+        self.env["FAKE_FAIL"] = "1"
+        proc = self.run_sh("--runs", "1", "--topology", "centralized", "--tag", "failing")
+        self.assertIn("claude failed for", proc.stderr)
+        self.assertNotIn("timed out", proc.stderr)
+
+    def test_a_claude_that_cannot_start_is_named(self):
+        (self.dir / "bin" / "claude").unlink()
+        proc = self.run_sh("--runs", "1", "--topology", "centralized")
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertIn("cannot exec claude: ", proc.stderr)
+
+    def test_a_sandbox_path_unsafe_for_a_permission_rule_is_refused_before_any_call(self):
+        fake = self.dir / "bin" / "mktemp"
+        fake.write_text('#!/bin/sh\nmkdir -p "$FAKE_SANDBOX" && printf "%s\\n" "$FAKE_SANDBOX"\n', encoding="utf-8")
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        for i, name in enumerate(("a(1)", "a[1]", "a*", "a?", "a b", "a,b", "a{1}")):
+            self.env["FAKE_SANDBOX"] = str(self.tmpdir / name)
+            proc = self.run_sh("--mode", "context", "--runs", "1", "--tag", f"bad-{i}")
+            self.assertEqual(proc.returncode, 2, (name, proc.stderr))
+            self.assertIn("sandbox path", proc.stderr)
+            self.assertFalse((self.tmpdir / name).exists(), name)
+        self.assertFalse(self.log.exists())
 
 
 if __name__ == "__main__":
