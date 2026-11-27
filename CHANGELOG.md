@@ -12,19 +12,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Stage skills `/build-vs-buy:researcher` and `/build-vs-buy:scorer` to run one stage on saved files, each with an optional `--model` override for that stage's agent.
 - `locked-context.md`, written into the run directory when checkpoint 1 is confirmed and read by the scorers.
 - Drift harness in `tools/drift/`: `run.sh` (spends tokens; not for CI), a frozen fixture, and `analyze.py`, a deterministic report on score, ranking and checkpoint-1 context variation with no pass/fail threshold.
-- First drift baseline: `docs/drift/2026-11-26-baseline.md`.
+- Drift reports: the first baseline (`docs/drift/2026-11-26-baseline.md`) and a rerun after the hardening changes (`docs/drift/2026-11-27-rerun.md`).
 - Tests for the scorer agent, stage skills, drift tools and fixture, plus strict plugin validation (skipped when the `claude` CLI is not installed).
 
 ### Changed
 - The orchestrator no longer scores. It dispatches one scorer per candidate, build included, and each scorer is given only that candidate's report. It writes the build report itself, without scores.
-- The `build-vs-buy` skill is now the entry point, and its orchestrator is pinned to sonnet.
+- The `build-vs-buy` skill is now the entry point. It sets `model: sonnet`, which does not hold for the whole run (see Known limitations).
 - Scripts are located through `${CLAUDE_PLUGIN_ROOT}`.
+- Each scorer is given copies of `locked-context.md` and its own report in a scratch directory. This limits what it is pointed at, not what its tools can read.
+- Each scorer entry has a `flags` list for ignored report instructions and a missing prerelease status; the analysis lists them under "Could not verify" and shows them at checkpoint 2. A missing or unlisted prerelease status is scored as `unstable_beta`.
+- The scorer checks the matrix version and the run stops on a mismatch.
+- Scorer retries do not pass `score.py` messages or scorer replies into a prompt.
+- Candidates with the same slug get numbered suffixes, and the skill says an abandoned run leaves its run directory behind.
+- The researcher may be given a locked-context file, the only local file it is told to read.
 
 ### Removed
 - `commands/build-vs-buy.md`, replaced by the skill as entry point.
 
 ### Fixed
 - The skill no longer offers to reuse research from an earlier run. Research is always fresh, and the stack scan skips earlier analysis directories.
+
+### Security
+- Text-level hardening against instructions planted in reports and web pages: reports and scorer entries are treated as data, the scorer lists every allowed modifier and flag, and the stage skills stop and ask for file paths that do not end in `.md` or that start with `-`. These are instructions to the model, not an enforced sandbox.
+
+### Known limitations
+- The orchestrator does not stay on sonnet. In one checked run of the full skill, `model: sonnet` lasted until the researcher's task notification started a new turn, and the session then returned to the Opus model it had started on. Whether later owner replies do the same was not tested. The drift runner sets the session model itself.
 
 ## [0.1.0] - 2026-11-25
 
