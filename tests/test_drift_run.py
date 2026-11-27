@@ -23,6 +23,7 @@ FAKE_CLAUDE = """#!/usr/bin/env bash
   echo "PHYS=$(pwd -P)"
   if [ -f README.md ]; then echo README=yes; else echo README=no; fi
 } >> "$FAKE_LOG"
+if [ -n "${FAKE_SLEEP-}" ]; then exec sleep 5; fi
 if [ -n "${FAKE_FAIL-}" ]; then echo partial; exit 1; fi
 case "$*" in
   *"/build-vs-buy:scorer"*) echo '{"result": "ok", "total_cost_usd": 0.01}' ;;
@@ -120,10 +121,42 @@ class RunSh(unittest.TestCase):
                      out + ["--runs", "0"], out + ["--runs", "31"], out + ["--runs", "-1"],
                      out + ["--budget", "0"], out + ["--budget", "5.01"], out + ["--budget", "abc"],
                      out + ["--budget", "-1"], out + ["--tag", ".."], out + ["--tag", "a/b"],
-                     out + ["--model", "x y"], out + ["--runs"], out + ["--tag"]):
+                     out + ["--model", "x y"], out + ["--runs"], out + ["--tag"],
+                     out + ["--timeout", "0"], out + ["--timeout", "3601"], out + ["--timeout", "1.5"],
+                     out + ["--timeout", "abc"], out + ["--timeout", "-1"], out + ["--timeout"]):
             proc = subprocess.run(["bash", str(RUN_SH), *args], capture_output=True, text=True, env=self.env)
             self.assertEqual(proc.returncode, 2, args)
         self.assertFalse(self.log.exists())
+
+    def test_a_call_past_the_timeout_fails_and_leaves_no_result_file(self):
+        self.env["FAKE_SLEEP"] = "1"
+        for extra in (["--topology", "centralized"], ["--mode", "context"]):
+            proc = self.run_sh("--runs", "1", "--timeout", "1", *extra)
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertIn("claude failed", proc.stderr)
+        self.assertEqual(list(self.out.rglob("*.out.json*")), [])
+
+    def test_timeout_edges_are_accepted(self):
+        for value in ("1800", "3600", "0900"):
+            proc = subprocess.run(["bash", str(RUN_SH), "--out", str(self.dir / value), "--runs", "1",
+                                   "--topology", "centralized", "--timeout", value],
+                                  capture_output=True, text=True, env=self.env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_usage_covers_the_timeout_and_reruns(self):
+        proc = subprocess.run(["bash", str(RUN_SH)], capture_output=True, text=True, env=self.env)
+        for phrase in ("--timeout", "default 900", "child processes may outlive",
+                       "delete OUT/TAG first"):
+            self.assertIn(phrase, proc.stderr)
+
+    def test_both_scorer_calls_get_the_same_tools(self):
+        for topology in ("independent", "centralized"):
+            self.log.unlink(missing_ok=True)
+            proc = subprocess.run(["bash", str(RUN_SH), "--out", str(self.dir / topology), "--runs", "1",
+                                   "--topology", topology], capture_output=True, text=True, env=self.env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            for line in (l for l in self.calls() if l.startswith("ARGS:")):
+                self.assertTrue(line.endswith("[--allowedTools] [Skill] [Agent] [Read] [Grep] [Glob]"), line)
 
     def test_model_env_overrides_are_unset(self):
         self.run_sh("--runs", "1", "--topology", "centralized")
