@@ -37,7 +37,7 @@ The stages can run on their own, on files. This is how the drift harness in `too
 /build-vs-buy:scorer <locked-context.md> <report.md> [<report.md> ...]
 ```
 
-Add `--model <alias>` to override a stage's pinned model for one run. `locked-context.md` is written into the run directory at checkpoint 1.
+Add `--model <alias>` to override a stage's pinned model for one run; `--model` may appear anywhere. File paths must contain no spaces, must end in `.md` and may not start with `-`. `locked-context.md` is written into the run directory at checkpoint 1.
 
 ## Output
 
