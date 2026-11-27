@@ -20,7 +20,8 @@ Usage: run.sh --out DIR [--mode scorer|context] [--runs N] [--model ALIAS]
                [--budget USD] [--timeout SECONDS] [--tag NAME]
   --mode      scorer (default) or context
   --runs      repetitions, integer 1..30 (default 5)
-  --model     scorer model alias passed to the scorer skill (default: the agent's pinned model)
+  --model     scorer model alias passed to the scorer skill (default: the agent's pinned model).
+              The claude session always runs on sonnet; --model does not change it.
   --topology  scorer mode only: one scorer per candidate (default) or one scorer for all,
               with the candidate order shuffled per run
   --arm       context mode only (default with-docs)
@@ -67,6 +68,10 @@ TIMEOUT=$((10#$TIMEOUT))
   || die "bad --tag"
 [ -z "$MODEL" ] || [[ "$MODEL" =~ ^[A-Za-z0-9._-]+$ ]] || die "bad --model"
 
+# --setting-sources project skips the user's model setting, so without --model the session
+# would run on the CLI default. It is fixed so that only the subagent model varies between sets.
+SESSION_MODEL=sonnet
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 case "$ROOT" in *[[:space:]]*) die "the repo path must not contain whitespace: $ROOT" ;; esac
@@ -106,7 +111,7 @@ call_to() {
   local outfile="$1" prompt="$2"; shift 2
   # perl's alarm survives exec, so the signal ends claude itself (macOS has no timeout(1)).
   if (cd "${CALL_DIR:-$ROOT}" && perl -e 'alarm shift @ARGV; exec @ARGV or die "cannot exec $ARGV[0]: $!\n"' "$TIMEOUT" claude -p "$prompt" --plugin-dir "$ROOT" --output-format json \
-        --setting-sources project --strict-mcp-config \
+        --model "$SESSION_MODEL" --setting-sources project --strict-mcp-config \
         --max-budget-usd "$BUDGET" --allowedTools "$@") > "$outfile.tmp"; then
     mv "$outfile.tmp" "$outfile"
   else

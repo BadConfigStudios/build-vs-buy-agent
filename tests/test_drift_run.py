@@ -118,6 +118,22 @@ class RunSh(unittest.TestCase):
         readme = [l for l in self.calls() if l.startswith("README=")]
         self.assertEqual(readme, ["README=yes"] * 2 + ["README=no"] * 2)
 
+    def test_the_session_model_is_set_on_every_call_in_both_modes(self):
+        # --setting-sources project skips the user's model setting, so the CLI default would apply.
+        for extra in ([], ["--topology", "centralized", "--model", "opus"], ["--mode", "context"]):
+            proc = self.run_sh("--runs", "1", "--tag", f"t{len(extra)}", *extra)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+        # The context prompt spans lines, so a call runs from ARGS: to the env line.
+        calls = re.findall(r"^ARGS:(.*?)^ENV_SUBAGENT", self.log.read_text(encoding="utf-8"), re.M | re.S)
+        self.assertEqual(len(calls), self.n_reports() + 2)
+        for call in calls:
+            self.assertEqual(call.count("[--model]"), 1, call)
+            self.assertIn("[--model] [sonnet]", call)
+
+    def test_usage_separates_the_session_model_from_the_scorer_model(self):
+        proc = subprocess.run(["bash", str(RUN_SH)], capture_output=True, text=True, env=self.env)
+        self.assertIn("The claude session always runs on sonnet", proc.stderr)
+
     def test_bad_usage_exits_2(self):
         out = ["--out", str(self.out)]
         for args in ([], out + ["--mode", "nope"], out + ["--runs", "x"], out + ["--topology", "diag"],
