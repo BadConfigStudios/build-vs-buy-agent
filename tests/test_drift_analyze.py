@@ -345,7 +345,7 @@ class FollowUps(unittest.TestCase):
         self.assertIn("- cost per run: run-1 $0.100, run-2 $0.250", analyze.render("x", s))
 
     def test_clean_strips_control_characters_and_escapes_pipes(self):
-        self.assertEqual(analyze.clean("a|b\x1b[31m\nc\u202ed"), "a\\|b[31mcd")
+        self.assertEqual(analyze.clean("a|b\x1b[31m\u202ed"), "a\\|b[31md")
 
     def test_option_names_and_errors_are_cleaned_in_the_report(self):
         bad = "Al|pha\x1b"
@@ -399,6 +399,35 @@ class FollowUps(unittest.TestCase):
         text = LOCKED.replace("mode: full", "mode:  Full ").replace("environment: production", "environment: PRODUCTION")
         meta = analyze.parse_locked_context(text)["meta"]
         self.assertEqual((meta["mode"], meta["environment"]), ("full", "production"))
+
+    def test_type_tag_ignores_case_nesting_and_qualifiers(self):
+        lines = ["Alpha (Hosted)", "Build (build: a table (Postgres) and worker)", "Beta (hosted, EU region)"]
+        text = LOCKED.split("## Candidates")[0] + "## Candidates\n" + "".join(f"- {c}\n" for c in lines)
+        self.assertEqual(analyze.parse_locked_context(text)["candidates"], ["Alpha", "Build", "Beta"])
+
+    def test_trailing_blanks_after_a_frontmatter_fence_are_accepted(self):
+        parsed = analyze.parse_locked_context(LOCKED.replace("---\n", "--- \t\n"))
+        self.assertEqual(parsed["meta"]["mode"], "full")
+        self.assertEqual(parsed["candidates"], ["Alpha", "Beta", "Build"])
+
+    def test_clean_escapes_a_backslash_before_a_pipe(self):
+        self.assertEqual(analyze.clean("A\\|B"), "A\\\\\\|B")
+
+    def test_clean_turns_every_line_break_into_a_space(self):
+        self.assertEqual(analyze.clean("a\nb\tc\u2028d\u2029e\r\nf"), "a b c d e  f")
+
+    def test_parse_error_is_kept_when_no_block_has_options(self):
+        reply = '```json\n{"options": [,]}\n```\n```json\n[1]\n```'
+        with self.assertRaisesRegex(ValueError, "no options list .*did not parse: Expecting value"):
+            analyze.extract_options(reply)
+
+    def test_the_same_directory_in_another_letter_case_exits_2(self):
+        root = self.tmp()
+        write_run(root / "set", 1, {"locked-context.md": LOCKED})
+        if not (root / "SET").is_dir():
+            self.skipTest("case-sensitive filesystem")
+        self.assertIn("given more than once",
+                      analyze.check_set_dirs([str(root / "set"), str(root / "SET")]) or "")
 
     def test_the_same_directory_twice_exits_2(self):
         root = self.tmp()

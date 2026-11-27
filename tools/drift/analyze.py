@@ -26,7 +26,7 @@ import score  # noqa: E402
 FENCE = re.compile(r"```json\s*\n(.+?)\n```", re.S)
 CONTEXT_FIELDS = ("mode", "environment", "business_stage", "expected_growth", "core_ness")
 # The type tag after a candidate name, with any description written inside or after it.
-TYPE_TAG = re.compile(r" \((?:hosted|self-hosted|build|<[^>]*>)(?::[^)]*)?\)(?::.*)?$")
+TYPE_TAG = re.compile(r" \((?:hosted|self-hosted|build|<[^>]*>)(?:[,:].*\)|\))(?::.*)?$", re.I)
 MAX_OUTPUT_BYTES = 1_000_000
 
 
@@ -36,13 +36,14 @@ def _normalize(value):
 
 def clean(text):
     """Make model-written text safe for a terminal and a markdown table cell."""
-    kept = "".join(c for c in str(text) if not unicodedata.category(c).startswith("C"))
-    return kept.replace("|", "\\|")
+    spaced = "".join(" " if c.isspace() else c for c in str(text))
+    kept = "".join(c for c in spaced if not unicodedata.category(c).startswith("C"))
+    return kept.replace("\\", "\\\\").replace("|", "\\|")
 
 
 def parse_locked_context(text):
     """Return {"meta": {key: value}, "candidates": [name, ...]} from a locked-context file."""
-    parts = re.split(r"^---$", text, maxsplit=2, flags=re.M)
+    parts = re.split(r"^---[ \t]*$", text, maxsplit=2, flags=re.M)
     if len(parts) < 3 or parts[0].strip():
         raise ValueError("locked-context file has no frontmatter")
     meta = {}
@@ -85,7 +86,8 @@ def extract_options(result_text):
         raise ValueError(failure)
     options = with_options[-1]["options"] if with_options else None
     if not isinstance(options, list) or not options:
-        raise ValueError("scorer reply has no options list")
+        detail = f" (a json block did not parse: {failure})" if failure and not with_options else ""
+        raise ValueError("scorer reply has no options list" + detail)
     return options
 
 
@@ -252,12 +254,13 @@ def set_labels(set_dirs):
 def check_set_dirs(set_dirs):
     seen = set()
     for d in set_dirs:
-        resolved = pathlib.Path(d).resolve()
-        if resolved in seen:
-            return f"analyze.py: {d} was given more than once"
-        seen.add(resolved)
         if not pathlib.Path(d).is_dir():
             return f"analyze.py: {d} is not a directory"
+        stat = pathlib.Path(d).stat()
+        identity = (stat.st_dev, stat.st_ino)
+        if identity in seen:
+            return f"analyze.py: {d} was given more than once"
+        seen.add(identity)
         if not run_dirs(d):
             return f"analyze.py: {d} contains no run-* directories"
     return None
