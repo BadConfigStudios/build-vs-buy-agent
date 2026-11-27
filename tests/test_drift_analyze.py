@@ -80,6 +80,14 @@ class ExtractOptions(unittest.TestCase):
         reply = "```json\n" + json.dumps({"options": [entry("A")]}) + "\n```"
         self.assertEqual(analyze.extract_options(reply)[0]["name"], "A")
 
+    def test_reads_indented_fenced_json(self):
+        body = json.dumps({"options": [entry("A")]}, indent=2)
+        for pad in ("  ", "\t"):
+            with self.subTest(pad=pad):
+                block = "```json\n" + body + "\n```"
+                reply = "\n".join(pad + line for line in block.split("\n"))
+                self.assertEqual(analyze.extract_options(reply)[0]["name"], "A")
+
     def test_rejects_reply_without_block(self):
         with self.assertRaises(ValueError):
             analyze.extract_options("no block here")

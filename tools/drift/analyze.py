@@ -23,7 +23,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "scripts"))
 import score  # noqa: E402
 
-FENCE = re.compile(r"```json\s*\n(.+?)\n```", re.S)
+FENCE = re.compile(r"```json\s*\n(.+?)\n[ \t]*```", re.S)
 CONTEXT_FIELDS = ("mode", "environment", "business_stage", "expected_growth", "core_ness")
 # The type tag after a candidate name, with any description written inside or after it.
 TYPE_TAG = re.compile(r" \((?:hosted|self-hosted|build|<[^>]*>)(?:[,:].*\)|\))(?::.*)?$", re.I)
