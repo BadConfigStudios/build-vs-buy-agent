@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -263,7 +264,9 @@ class Hardening(unittest.TestCase):
         self.assertEqual((s["runs_total"], s["runs_scored"]), (2, 1))
         self.assertEqual(s["totals"]["Alpha"].__len__(), 1)
         self.assertTrue(any(e.startswith("run-2: b.out.json") for e in s["errors"]))
-        self.assertIn("runs scored 1/2", analyze.render("x", s))
+        text = analyze.render("x", s)
+        self.assertIn("runs: 2, scored: 1", text)
+        self.assertNotIn("runs scored", text)
 
     def test_run_names_and_numeric_order(self):
         root = self.tmp()
@@ -310,6 +313,101 @@ class Hardening(unittest.TestCase):
         example = json.dumps({"options": [entry("Example")]})
         reply = f"e.g.\n```json\n{example}\n```\nfinal\n```json\n{good}\n```\nnote\n```json\n{{\"x\": 1}}\n```"
         self.assertEqual(analyze.extract_options(reply)[0]["name"], "Real")
+
+
+class FollowUps(unittest.TestCase):
+    def tmp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        return pathlib.Path(d.name)
+
+    def summary(self, per_run_options, costs=None):
+        root = self.tmp()
+        for i, options in enumerate(per_run_options, 1):
+            cost = costs[i - 1] if costs else 0.1
+            write_run(root, i, {"all.out.json": out_json(options, cost)})
+        runs = [analyze.load_run(d) for d in analyze.run_dirs(root)]
+        return analyze.summarize(runs, "full", "production")
+
+    def test_ties_among_passing_options_are_counted(self):
+        tied = [entry("Alpha"), entry("Beta")]
+        untied = [entry("Alpha", fit=5), entry("Beta")]
+        failing = entry("Beta")
+        failing["must_haves_met"] = False
+        s = self.summary([tied, untied, [entry("Alpha"), failing]])
+        self.assertEqual(s["tie_runs"], 1)
+        self.assertIn("- runs with tied totals among passing options: 1/3", analyze.render("x", s))
+
+    def test_cost_is_listed_per_run(self):
+        opts = [entry("Alpha"), entry("Beta")]
+        s = self.summary([opts, opts], costs=[0.1, 0.25])
+        self.assertEqual(s["run_costs"], [("run-1", 0.1), ("run-2", 0.25)])
+        self.assertIn("- cost per run: run-1 $0.100, run-2 $0.250", analyze.render("x", s))
+
+    def test_clean_strips_control_characters_and_escapes_pipes(self):
+        self.assertEqual(analyze.clean("a|b\x1b[31m\nc\u202ed"), "a\\|b[31mcd")
+
+    def test_option_names_and_errors_are_cleaned_in_the_report(self):
+        bad = "Al|pha\x1b"
+        low = entry("Beta", fit=1)
+        gated = entry(bad, fit=5)
+        gated["must_haves_met"] = False
+        s = self.summary([[entry(bad), low], [gated, low]])
+        s["errors"].append("run-9: a|b\x1b")
+        text = analyze.render("x", s)
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("Al|pha", text)
+        self.assertIn("| Al\\|pha |", text)
+        self.assertIn("- run-9: a\\|b", text)
+
+    def test_context_values_candidates_and_errors_are_cleaned(self):
+        root = self.tmp()
+        text = LOCKED.replace("pre-revenue", "pre|revenue\x1b").replace("- Alpha (hosted)", "- Al|pha\x1b (hosted)")
+        write_run(root, 1, {"locked-context.md": text})
+        s = analyze.summarize_context(root)
+        s["errors"].append("run-9: a|b\x1b")
+        out = analyze.render_context({"x": s})
+        self.assertNotIn("\x1b", out)
+        self.assertIn("pre\\|revenue", out)
+        self.assertIn("al\\|pha", out)
+        self.assertIn("- error: run-9: a\\|b", out)
+
+    def test_oversized_output_is_an_error_and_is_not_read(self):
+        root = self.tmp()
+        write_run(root, 1, {"a.out.json": " " * (analyze.MAX_OUTPUT_BYTES + 1)})
+        with mock.patch.object(pathlib.Path, "read_text", side_effect=AssertionError("read")):
+            run = analyze.load_run(root / "run-1")
+        self.assertEqual(run["options"], [])
+        self.assertEqual(len(run["errors"]), 1)
+        self.assertIn("larger than 1000000 bytes", run["errors"][0])
+
+    def test_only_the_type_tag_is_stripped_from_candidate_names(self):
+        lines = ["Mail (EU) (hosted)", "Relay (v2)", "Postal (self-hosted)",
+                 "Build (build)", "Build (build): outbox table (Postgres)",
+                 "Build (build: outbox table and a worker)"]
+        text = LOCKED.split("## Candidates")[0] + "## Candidates\n" + "".join(f"- {c}\n" for c in lines)
+        self.assertEqual(analyze.parse_locked_context(text)["candidates"],
+                         ["Mail (EU)", "Relay (v2)", "Postal", "Build", "Build", "Build"])
+
+    def test_dashes_inside_a_frontmatter_value_survive(self):
+        parsed = analyze.parse_locked_context(LOCKED.replace("email notifier", "email --- notifier"))
+        self.assertEqual(parsed["meta"]["topic"], "email --- notifier")
+        self.assertEqual(parsed["meta"]["mode"], "full")
+        self.assertEqual(parsed["candidates"], ["Alpha", "Beta", "Build"])
+
+    def test_mode_and_environment_are_normalized(self):
+        text = LOCKED.replace("mode: full", "mode:  Full ").replace("environment: production", "environment: PRODUCTION")
+        meta = analyze.parse_locked_context(text)["meta"]
+        self.assertEqual((meta["mode"], meta["environment"]), ("full", "production"))
+
+    def test_the_same_directory_twice_exits_2(self):
+        root = self.tmp()
+        write_run(root / "set", 1, {"locked-context.md": LOCKED})
+        proc = subprocess.run([sys.executable, str(ROOT / "tools" / "drift" / "analyze.py"), "context",
+                               str(root / "set"), str(root / "set") + "/."],
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("given more than once", proc.stderr)
 
 
 if __name__ == "__main__":

@@ -17,18 +17,32 @@ import math
 import pathlib
 import re
 import sys
+import unicodedata
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.append(str(ROOT / "scripts"))
 import score  # noqa: E402
 
 FENCE = re.compile(r"```json\s*\n(.+?)\n```", re.S)
 CONTEXT_FIELDS = ("mode", "environment", "business_stage", "expected_growth", "core_ness")
+# The type tag after a candidate name, with any description written inside or after it.
+TYPE_TAG = re.compile(r" \((?:hosted|self-hosted|build|<[^>]*>)(?::[^)]*)?\)(?::.*)?$")
+MAX_OUTPUT_BYTES = 1_000_000
+
+
+def _normalize(value):
+    return " ".join(value.lower().split())
+
+
+def clean(text):
+    """Make model-written text safe for a terminal and a markdown table cell."""
+    kept = "".join(c for c in str(text) if not unicodedata.category(c).startswith("C"))
+    return kept.replace("|", "\\|")
 
 
 def parse_locked_context(text):
     """Return {"meta": {key: value}, "candidates": [name, ...]} from a locked-context file."""
-    parts = text.split("---", 2)
+    parts = re.split(r"^---$", text, maxsplit=2, flags=re.M)
     if len(parts) < 3 or parts[0].strip():
         raise ValueError("locked-context file has no frontmatter")
     meta = {}
@@ -36,13 +50,16 @@ def parse_locked_context(text):
         if ":" in line:
             key, _, value = line.partition(":")
             meta[key.strip()] = value.strip()
+    for key in ("mode", "environment"):
+        if key in meta:
+            meta[key] = _normalize(meta[key])
     candidates = []
     in_candidates = False
     for line in parts[2].splitlines():
         if line.startswith("## "):
             in_candidates = line.strip() == "## Candidates"
         elif in_candidates and line.startswith("- "):
-            candidates.append(line[2:].split(" (")[0].strip())
+            candidates.append(TYPE_TAG.sub("", line[2:].strip()).strip())
     return {"meta": meta, "candidates": candidates}
 
 
@@ -50,23 +67,23 @@ def extract_options(result_text):
     matches = list(FENCE.finditer(result_text or ""))
     if not matches:
         raise ValueError("no json block in the scorer reply")
-    data = None
-    for match in reversed(matches):
+    parsed, failure = [], None
+    for match in matches:
         try:
-            candidate = json.loads(match.group(1))
-        except (ValueError, RecursionError):
-            continue
-        if isinstance(candidate, dict) and "options" in candidate:
-            data = candidate
-            break
-    if data is None:
-        try:
-            data = json.loads(matches[0].group(1))
-        except RecursionError as exc:
-            raise ValueError("json block is nested too deeply") from exc
-    if isinstance(data, dict) and "error" in data:
-        raise ValueError(f"scorer returned an error: {str(data['error'])[:100]}")
-    options = data.get("options") if isinstance(data, dict) else None
+            parsed.append(json.loads(match.group(1)))
+        except RecursionError:
+            failure = failure or "json block is nested too deeply"
+        except ValueError as exc:
+            failure = failure or str(exc)
+    blocks = [d for d in parsed if isinstance(d, dict)]
+    with_options = [d for d in blocks if "options" in d]
+    chosen = with_options[-1:] or blocks
+    for data in chosen:
+        if "error" in data:
+            raise ValueError(f"scorer returned an error: {str(data['error'])[:100]}")
+    if not with_options and not parsed:
+        raise ValueError(failure)
+    options = with_options[-1]["options"] if with_options else None
     if not isinstance(options, list) or not options:
         raise ValueError("scorer reply has no options list")
     return options
@@ -79,6 +96,8 @@ def load_run(run_dir):
         errors.append("no *.out.json files")
     for path in files:
         try:
+            if path.stat().st_size > MAX_OUTPUT_BYTES:
+                raise ValueError(f"larger than {MAX_OUTPUT_BYTES} bytes, not read")
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("output is not a JSON object")
@@ -102,6 +121,11 @@ def _pairwise_agreement(rankings):
         if votes:
             shares.append(max(votes.count(True), votes.count(False)) / len(votes))
     return sum(shares) / len(shares) if shares else None
+
+
+def _has_tie(result):
+    totals = [o["weighted_total"] for o in result["options"] if o["passed"]]
+    return len(set(totals)) < len(totals)
 
 
 def summarize(runs, mode, environment):
@@ -139,8 +163,10 @@ def summarize(runs, mode, environment):
         "modal_share": modal[1],
         "pairwise_agreement": _pairwise_agreement(rankings),
         "close_call_runs": sum(1 for r in scored if r["close_call"]),
+        "tie_runs": sum(1 for r in scored if _has_tie(r)),
         "max_total": scored[0]["max_total"] if scored else None,
         "cost_total": sum(r["cost"] for r in runs),
+        "run_costs": [(run.get("name", f"run-{i}"), run["cost"]) for i, run in enumerate(runs, 1)],
     }
 
 
@@ -166,28 +192,30 @@ def render(label, summary):
     n, s = summary["runs_total"], summary["runs_scored"]
     lines = [f"## {label}", "",
              f"- runs: {n}, scored: {s}, cost: ${summary['cost_total']:.3f}",
-             f"- runs scored {s}/{n}"]
+             "- cost per run: " + (", ".join(f"{clean(name)} ${cost:.3f}"
+                                             for name, cost in summary["run_costs"]) or "none")]
     if s:
         pair = summary["pairwise_agreement"]
         lines += [
             f"- same ranking as the most common one: {summary['modal_share']}/{s}",
             f"- pairwise order agreement: {'n/a' if pair is None else f'{pair:.0%}'}",
-            f"- most common ranking: {' > '.join(summary['modal_ranking']) or 'none'}",
+            f"- most common ranking: {' > '.join(map(clean, summary['modal_ranking'])) or 'none'}",
+            f"- runs with tied totals among passing options: {summary['tie_runs']}/{s}",
             f"- close call flagged in {summary['close_call_runs']}/{s} runs",
             "", "| Option | Total min | Total max | Spread |", "|---|---|---|---|",
         ]
         for name in summary["names"]:
             lo, hi = _range(summary["totals"][name])
-            lines.append(f"| {name} | {lo}/{summary['max_total']} | {hi}/{summary['max_total']} | {hi - lo} |")
+            lines.append(f"| {clean(name)} | {lo}/{summary['max_total']} | {hi}/{summary['max_total']} | {hi - lo} |")
         varied = varying_factors(summary)
         lines += ["", "Factors whose final score varied (min to max):"]
-        lines += [f"- {name}: " + ", ".join(f"{f} {lo}-{hi}" for f, (lo, hi) in v.items())
+        lines += [f"- {clean(name)}: " + ", ".join(f"{f} {lo}-{hi}" for f, (lo, hi) in v.items())
                   for name, v in varied.items()] or ["- none"]
-        gate_diff = [f"{name}: {g} {outs}" for name, gs in summary["gates"].items()
+        gate_diff = [f"{clean(name)}: {g} {outs}" for name, gs in summary["gates"].items()
                      for g, outs in gs.items() if len(outs) > 1]
         lines += ["", "Gates whose outcome varied:"] + ([f"- {g}" for g in gate_diff] or ["- none"])
     if summary["errors"]:
-        lines += ["", "Errors:"] + [f"- {e}" for e in summary["errors"]]
+        lines += ["", "Errors:"] + [f"- {clean(e)}" for e in summary["errors"]]
     return "\n".join(lines) + "\n"
 
 
@@ -222,7 +250,12 @@ def set_labels(set_dirs):
 
 
 def check_set_dirs(set_dirs):
+    seen = set()
     for d in set_dirs:
+        resolved = pathlib.Path(d).resolve()
+        if resolved in seen:
+            return f"analyze.py: {d} was given more than once"
+        seen.add(resolved)
         if not pathlib.Path(d).is_dir():
             return f"analyze.py: {d} is not a directory"
         if not run_dirs(d):
@@ -242,7 +275,7 @@ def summarize_context(set_dir):
             errors.append(f"{d.name}: {exc}")
             continue
         for f in CONTEXT_FIELDS:
-            values[f].add(" ".join(parsed["meta"].get(f, "missing").lower().split()))
+            values[f].add(_normalize(parsed["meta"].get(f, "missing")))
         candidate_sets.add(tuple(sorted(c.lower() for c in parsed["candidates"])))
     return {"runs_total": len(dirs), "values": {f: sorted(v) for f, v in values.items()},
             "candidate_sets": sorted(candidate_sets), "errors": errors}
@@ -253,11 +286,11 @@ def render_context(summaries):
     for label, s in summaries.items():
         lines.append(f"### {label} ({s['runs_total']} runs)")
         for f in CONTEXT_FIELDS:
-            lines.append(f"- {f}: {' | '.join(s['values'][f]) or 'missing'}")
+            lines.append(f"- {f}: {' | '.join(map(clean, s['values'][f])) or 'missing'}")
         lines.append(f"- distinct candidate sets: {len(s['candidate_sets'])}")
         for cs in s["candidate_sets"]:
-            lines.append(f"  - {', '.join(cs)}")
-        lines += [f"- error: {e}" for e in s["errors"]]
+            lines.append(f"  - {', '.join(map(clean, cs))}")
+        lines += [f"- error: {clean(e)}" for e in s["errors"]]
         lines.append("")
     labels = list(summaries)
     if len(labels) > 1:
@@ -271,33 +304,32 @@ def render_context(summaries):
 
 
 def main(argv):
-    if len(argv) < 3 or argv[1] not in ("scores", "context"):
+    command = argv[1] if len(argv) > 1 else None
+    if command == "context" and len(argv) >= 3:
+        locked, set_dirs = None, argv[2:]
+    elif command == "scores" and len(argv) >= 5 and argv[2] == "--locked":
+        locked, set_dirs = argv[3], argv[4:]
+    else:
         print(__doc__, file=sys.stderr)
         return 2
-    if argv[1] == "context":
-        problem = check_set_dirs(argv[2:])
-        if problem:
-            print(problem, file=sys.stderr)
+    if locked is not None:
+        try:
+            meta = parse_locked_context(pathlib.Path(locked).read_text(encoding="utf-8"))["meta"]
+            mode, environment = meta["mode"], meta["environment"]
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"analyze.py: cannot read mode and environment from the locked-context file: {exc}",
+                  file=sys.stderr)
             return 2
-        summaries = dict(zip(set_labels(argv[2:]), map(summarize_context, argv[2:])))
-        sys.stdout.write(render_context(summaries))
-        return 0
-    if len(argv) < 5 or argv[2] != "--locked":
-        print(__doc__, file=sys.stderr)
-        return 2
-    try:
-        meta = parse_locked_context(pathlib.Path(argv[3]).read_text(encoding="utf-8"))["meta"]
-        mode, environment = meta["mode"], meta["environment"]
-    except (OSError, ValueError, KeyError) as exc:
-        print(f"analyze.py: cannot read mode and environment from the locked-context file: {exc}",
-              file=sys.stderr)
-        return 2
-    problem = check_set_dirs(argv[4:])
+    problem = check_set_dirs(set_dirs)
     if problem:
         print(problem, file=sys.stderr)
         return 2
+    if locked is None:
+        summaries = dict(zip(set_labels(set_dirs), map(summarize_context, set_dirs)))
+        sys.stdout.write(render_context(summaries))
+        return 0
     summaries = {}
-    for label, set_dir in zip(set_labels(argv[4:]), argv[4:]):
+    for label, set_dir in zip(set_labels(set_dirs), set_dirs):
         runs = [load_run(d) for d in run_dirs(set_dir)]
         summaries[label] = summarize(runs, mode, environment)
     for label, s in summaries.items():
