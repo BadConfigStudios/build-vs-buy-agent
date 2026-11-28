@@ -23,7 +23,7 @@ Issue #54: docs: 0.2.0 release notes and refactor pass — https://github.com/Ba
 - Never merge without owner approval at the time. Stop at every PR boundary.
 
 ### State
-- `main` is at `754789f`; 259 tests pass.
+- Before this handoff merged, `main` was at `754789f` and 259 tests passed.
 - #56 is closed.
 - #66 is a known limit listed in the CHANGELOG. The issue is still open on the milestone. Closing it was suggested and is not approved.
 - The branch `docs/release-0.2.0-changelog` (local and remote) is not deleted yet.
