@@ -209,6 +209,16 @@ class Readme(unittest.TestCase):
                        "/build-vs-buy", "docs/analysis/", "MIT"):
             self.assertIn(phrase, text, phrase)
 
+    def test_readme_states_purpose_and_limits(self):
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        intro = text.split("## Install", 1)[0]
+        self.assertIn(
+            "**Purpose:** to organize the evidence for a build-vs-buy question so you can check it "
+            "and challenge it. It produces analysis only; you make the decision. Like any analysis, "
+            "it involves judgment and some speculation: research can be incomplete, some figures are "
+            "estimates, and scores can differ between runs. Treat it as one data point alongside "
+            "your own knowledge and other input.", intro)
+
     def test_no_private_details(self):
         try:
             tracked = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True,

@@ -63,7 +63,7 @@ a { color:var(--accent); }
 <body>
 <header>
 <h1 class="page">__TITLE__</h1>
-<p class="note">Analysis only. This is not a decision.</p>
+<p class="note">Analysis only, not a decision. It involves judgment and some speculation. Treat it as one data point.</p>
 </header>
 <nav id="tabs" role="tablist"></nav>
 <main id="panels"></main>
