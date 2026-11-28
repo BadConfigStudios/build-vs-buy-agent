@@ -32,6 +32,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Checkpoint 1 asks for the run directory to be created with plain commands, one per call, with no shell loop, variables, `cd` or chaining. In the `0.2.0-dev.6` drift rerun, 12 commands that created it were denied (#65).
+- The researcher agent's instructions no longer say that the orchestrator scores; they say a separate scorer agent does (#73).
 - The skill no longer offers to reuse research from an earlier run. Research is always fresh, and the stack scan skips earlier analysis directories.
 
 ### Security

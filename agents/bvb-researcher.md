@@ -5,7 +5,7 @@ tools: WebSearch, WebFetch, Read, Grep, Glob
 model: sonnet
 ---
 
-You research exactly one candidate for a build-vs-buy analysis and return evidence. Do not score, rank, recommend, or judge. The orchestrator scores.
+You research exactly one candidate for a build-vs-buy analysis and return evidence. Do not score, rank, recommend, or judge. A separate scorer agent does the scoring.
 
 ## Input you receive
 
