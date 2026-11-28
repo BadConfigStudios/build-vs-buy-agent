@@ -99,11 +99,18 @@ class FinalTemplate(unittest.TestCase):
             self.assertIn(heading, self.text)
 
     def test_no_recommendation_language(self):
-        self.assertIn("This analysis does not make a decision. It reports scores and evidence "
-                      "so the owner can decide.", self.text)
+        self.assertIn(
+            "This analysis organizes evidence to inform a decision; it does not make one. Like any "
+            "analysis, it involves judgment and some speculation: research can be incomplete, some "
+            "figures are estimates, and scores can differ between runs. Treat it as one data point, "
+            "and check the evidence and unverified items before relying on it.", self.text)
         lowered = self.text.lower()
         for phrase in RECOMMENDATION_PHRASES:
             self.assertNotIn(phrase, lowered, phrase)
+
+    def test_ranking_section_explains_tie_order(self):
+        section = self.text.split("## Ranking", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("Tied totals are listed in name order and do not indicate a preference.", section)
 
     def test_factor_labels_cover_score_weights_in_order(self):
         self.assertEqual(list(FACTOR_LABELS), list(score.WEIGHTS))
