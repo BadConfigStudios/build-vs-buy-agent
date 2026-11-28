@@ -19,6 +19,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The orchestrator no longer scores. It dispatches one scorer per candidate, build included, and each scorer is given only that candidate's report. It writes the build report itself, without scores.
 - The `build-vs-buy` skill is now the entry point. It sets `model: sonnet`, which does not hold for the whole run (see Known limitations).
 - Scripts are located through `${CLAUDE_PLUGIN_ROOT}`.
+- The README, the report and the HTML view say what the analysis is for: it informs a decision without making one, involves judgment and some speculation, and is one data point. The report says tied totals are listed in name order and do not indicate a preference.
 - Each scorer is given copies of `locked-context.md` and its own report in a scratch directory. This limits what it is pointed at, not what its tools can read.
 - Each scorer entry has a `flags` list for ignored report instructions and a missing prerelease status; the analysis lists them under "Could not verify" and shows them at checkpoint 2. A missing or unlisted prerelease status is scored as `unstable_beta`.
 - The scorer checks the matrix version and the run stops on a mismatch.
