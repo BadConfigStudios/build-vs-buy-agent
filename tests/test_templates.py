@@ -134,7 +134,7 @@ class ResearcherAgent(unittest.TestCase):
         self.assertNotRegex(head, r"\b(Write|Edit|Bash)\b")
 
     def test_forbids_scoring(self):
-        self.assertIn("Do not score, rank, recommend, or judge. The orchestrator scores.", self.text)
+        self.assertIn("Do not score, rank, recommend, or judge. A separate scorer agent does the scoring.", self.text)
         self.assertIn("Never scores", self.text.split("---", 2)[1])
 
     def test_prerelease_enum_matches_score_py(self):
