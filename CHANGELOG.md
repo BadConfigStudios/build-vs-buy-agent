@@ -5,7 +5,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-11-28
 
 ### Added
 - Read-only `bvb-scorer` agent (pinned to sonnet) that scores a researcher report against the matrix and returns the `score.py` input entry, with a reason, evidence and status for every factor.
