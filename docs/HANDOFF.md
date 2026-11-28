@@ -1,10 +1,9 @@
-# Handoff — 0.2.0-rc.2 (release of MVP 2)
+# Handoff — 0.2.0-rc.3 (release of MVP 2)
 
 **Read `~/.claude/CLAUDE.md` in full before anything else.**
 
 ## Just merged
-PR #71: create the run directory with plain separate commands (fixes #65, version `0.2.0-rc.2`) — https://github.com/BadConfigStudios/build-vs-buy-agent/pull/71
-PR #55: 0.2.0 changelog and drift rerun — https://github.com/BadConfigStudios/build-vs-buy-agent/pull/55
+PR #74: the researcher agent says a separate scorer agent scores (closes #73, version `0.2.0-rc.3`) — https://github.com/BadConfigStudios/build-vs-buy-agent/pull/74
 
 ## Current milestone
 MVP 2 — 0.2.0 — https://github.com/BadConfigStudios/build-vs-buy-agent/milestone/2
@@ -12,7 +11,7 @@ MVP 2 — 0.2.0 — https://github.com/BadConfigStudios/build-vs-buy-agent/miles
 ## Next task
 Issue #54: docs: 0.2.0 release notes and refactor pass — https://github.com/BadConfigStudios/build-vs-buy-agent/issues/54
 
-`0.2.0-rc.2` is not tagged, and the CHANGELOG entry for 0.2.0 still says "Unreleased". #54 stays open until the release is done. Its comments do not record whether the refactor pass was done, so check that first.
+The release still needs the CHANGELOG date for 0.2.0 (it says "Unreleased"), the owner's approval to tag, and then closing #54 and the milestone. `0.2.0-rc.3` is not tagged.
 
 ## Carry-over context
 
@@ -23,21 +22,30 @@ Issue #54: docs: 0.2.0 release notes and refactor pass — https://github.com/Ba
 - Never merge without owner approval at the time. Stop at every PR boundary.
 
 ### State
-- Before this handoff merged, `main` was at `754789f` and 259 tests passed.
-- #56 is closed.
-- #66 is a known limit listed in the CHANGELOG. The issue is still open on the milestone. Closing it was suggested and is not approved.
-- The branch `docs/release-0.2.0-changelog` (local and remote) is not deleted yet.
-- #67 (show tied totals as ties) is on MVP 4.
+- At `ee50a05` (the #74 merge), 259 tests passed.
+- #66 is a known limit listed in the CHANGELOG. The issue is still open on the milestone.
 
-### Live checks for #71 (Claude Code 2.1.332, sonnet session)
-- 6 context runs: no denials, all wrote `locked-context.md` and used the four separate commands (1.00 USD).
-- 1 existing-directory run: created `-2` and left the marker file unchanged (0.25 USD). It used a one-off script that also redirected stdin.
-- `/code-review low` returned only "(none)".
-- Outputs are in `drift-runs/0.2.0-rc.2/` (ignored by git, local only).
+### Refactor pass for #54 (done, not yet recorded on the issue)
+- PR #55 covered the `analyze.py` and `run.sh` cleanup items through #60 and #61.
+- A later pass read `analyze.py`, `run.sh`, the three skills, both agents and the locked-context template.
+- Tests were only searched for repeated definitions and unused names. The `build_html.py` changes were not reviewed.
+- The one wording bug it found was fixed in #74. Minor duplication was left as is.
+
+### Not decided
+- Whether to create an issue for the missing stdin redirect in `tools/drift/run.sh`, and on which milestone.
+- Whether to post the refactor-pass comment on #54.
+- Whether to close #66.
+
+### Live checks
+- `0.2.0-rc.3`: one researcher stage (Postmark, 0.45 USD) returned all 13 sections with no permission denials, and a keyword search found no scoring. The facts in the report were not checked.
+- #71, on `0.2.0-rc.2` (Claude Code 2.1.332, sonnet session):
+  - 6 context runs: no denials, all wrote `locked-context.md` and used the four separate commands (1.00 USD).
+  - 1 existing-directory run: created `-2` and left the marker file unchanged (0.25 USD). It used a one-off script that also redirected stdin.
+  - `/code-review low` returned only "(none)".
+- Outputs are in `drift-runs/<version>/` (ignored by git, local only).
 
 ### Still open or untested
 - The tie rule's effect on ranking agreement figures is not measured.
-- `run.sh` does not redirect stdin.
 - Not tested: the retry after a failed `mkdir`; extra permission prompts in normal use.
 - Not tested live:
   - a skill run with the new report wording
