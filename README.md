@@ -2,7 +2,7 @@
 
 A Claude Code plugin that helps you decide whether to build something or adopt an existing tool. It interviews you, researches each candidate in parallel, scores them with a transparent matrix, lets you challenge every score, and writes the analysis as markdown plus a single-file HTML view you can send to people who do not read markdown.
 
-It produces analysis only. You make the decision.
+**Purpose:** to organize the evidence for a build-vs-buy question so you can check it and challenge it. It produces analysis only; you make the decision. Like any analysis, it involves judgment and some speculation: research can be incomplete, some figures are estimates, and scores can differ between runs. Treat it as one data point alongside your own knowledge and other input.
 
 ## Install
 

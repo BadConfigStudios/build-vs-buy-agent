@@ -127,7 +127,7 @@ class PipelineTest(unittest.TestCase):
     def test_summary_tab_keeps_frontmatter_and_no_decision_line(self):
         summary = self.tabs[0]["markdown"]
         self.assertIn("status: analysis", summary)
-        self.assertIn("does not make a decision", summary)
+        self.assertIn("to inform a decision; it does not make one", summary)
         self.assertNotIn("## Scores", summary)
 
     def test_hostile_evidence_stays_inert_in_page(self):

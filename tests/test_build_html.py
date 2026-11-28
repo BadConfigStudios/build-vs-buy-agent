@@ -118,6 +118,13 @@ class Build(unittest.TestCase):
             self.assertNotIn("| Script | 85% |", summary)
             self.assertIn("| Script | 85% |", tabs[1]["markdown"])
 
+    def test_header_note_states_purpose_and_limits(self):
+        tmp, run = make_run()
+        with tmp:
+            page = build_html.build(run).read_text(encoding="utf-8")
+            self.assertIn('<p class="note">Analysis only, not a decision. It involves judgment and '
+                          'some speculation. Treat it as one data point.</p>', page)
+
     def test_no_scores_tab_when_section_missing(self):
         tmp, run = make_run(final="# T\n\ntext\n")
         with tmp:

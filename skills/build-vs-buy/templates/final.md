@@ -11,7 +11,7 @@ expected_growth: <declared growth>
 
 # Analysis: <topic>
 
-This analysis does not make a decision. It reports scores and evidence so the owner can decide.
+This analysis organizes evidence to inform a decision; it does not make one. Like any analysis, it involves judgment and some speculation: research can be incomplete, some figures are estimates, and scores can differ between runs. Treat it as one data point, and check the evidence and unverified items before relying on it.
 
 ## Context
 
@@ -46,6 +46,7 @@ Per-option evidence and reasoning: see `candidates/<name>.md`.
 
 - <1. name, pct, band> (options that failed a gate are listed as out, with the gate)
 - Close call: <yes or no>. Top-two gap: <points or n/a>. If yes, this is a judgment call; prefer the simplest option behind an interface the owner controls.
+- Tied totals are listed in name order and do not indicate a preference.
 
 ## Owner overrides
 
