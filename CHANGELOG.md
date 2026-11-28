@@ -31,6 +31,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `commands/build-vs-buy.md`, replaced by the skill as entry point.
 
 ### Fixed
+- Checkpoint 1 asks for the run directory to be created with plain commands, one per call, with no shell loop, variables, `cd` or chaining. In the `0.2.0-dev.6` drift rerun, 12 commands that created it were denied (#65).
 - The skill no longer offers to reuse research from an earlier run. Research is always fresh, and the stack scan skips earlier analysis directories.
 
 ### Security
@@ -39,6 +40,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Known limitations
 - The orchestrator does not stay on sonnet. In one checked run of the full skill, `model: sonnet` lasted until the researcher's task notification started a new turn, and the session then returned to the Opus model it had started on. Whether later owner replies do the same was not tested. The drift runner sets the session model itself.
 - Rankings are not fully stable. In drift tests on one frozen case, the same three options stayed on top, but first place varied between runs and setups. Treat options in a close call as unranked. Tied totals are listed in name order.
+- Some `/build-vs-buy:scorer` replies end with the Agent tool's `agentId` and usage text: 2 of 55 in the `0.2.0-dev.6` drift rerun and none of 55 in the baseline. The relaying session is told to print the reply exactly as returned and usually leaves this text off; why it kept it in those 2 is not known. The drift analyzer ignores it. The full skill builds its own scoring input, so the text is not expected in written results; its transcripts were not checked for this (#66).
 
 ## [0.1.0] - 2026-11-25
 
