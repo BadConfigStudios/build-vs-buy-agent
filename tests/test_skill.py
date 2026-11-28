@@ -128,6 +128,16 @@ class SkillFile(unittest.TestCase):
             self.assertIn(phrase, checkpoint, phrase)
         self.assertIn("at the absolute path you noted", self.text.split("## Step 4: Write the analysis")[1])
 
+    def test_run_directory_is_created_with_plain_separate_commands(self):
+        checkpoint = self.section("## Checkpoint 1", "## Step 2")
+        for phrase in ("one command per tool call, with no shell loop, variables, `cd` or chaining",
+                       "`mkdir -p docs/analysis`",
+                       "`ls docs/analysis`",
+                       "`mkdir docs/analysis/<name>`, without `-p`, so that it fails if the directory exists",
+                       "Then run `pwd`"):
+            self.assertIn(phrase, checkpoint, phrase)
+        self.assertNotIn("from `pwd` after creating it", checkpoint)
+
     def test_build_report_identifies_itself(self):
         self.assertIn("Section 1 must state that this is the build option",
                       self.section("## Step 2", "## Step 3"))
