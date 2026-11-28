@@ -37,6 +37,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Known limitations
 - The orchestrator does not stay on sonnet. In one checked run of the full skill, `model: sonnet` lasted until the researcher's task notification started a new turn, and the session then returned to the Opus model it had started on. Whether later owner replies do the same was not tested. The drift runner sets the session model itself.
+- Rankings are not fully stable. In drift tests on one frozen case, the same three options stayed on top, but first place varied between runs and setups. Treat options in a close call as unranked. Tied totals are listed in name order.
 
 ## [0.1.0] - 2026-11-25
 
